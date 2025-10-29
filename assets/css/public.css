@@ -1,0 +1,200 @@
+/**
+ * Public styles for X402 Paywall
+ *
+ * @package X402_Paywall
+ */
+
+.x402-paywall-container {
+    margin: 20px 0;
+    padding: 0;
+}
+
+.x402-paywall-preview {
+    position: relative;
+    max-height: 200px;
+    overflow: hidden;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 8px;
+}
+
+.x402-paywall-preview::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 100px;
+    background: linear-gradient(to bottom, rgba(249, 249, 249, 0), rgba(249, 249, 249, 1));
+}
+
+.x402-paywall-message {
+    background: #ffffff;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.x402-paywall-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    opacity: 0.8;
+}
+
+.x402-paywall-message h3 {
+    font-size: 28px;
+    margin: 0 0 15px 0;
+    color: #333;
+}
+
+.x402-paywall-message > p {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 30px;
+}
+
+.x402-paywall-details {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 30px auto;
+    max-width: 400px;
+}
+
+.x402-paywall-price {
+    font-size: 36px;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 10px;
+}
+
+.x402-paywall-amount {
+    color: #27ae60;
+}
+
+.x402-paywall-currency {
+    font-size: 24px;
+    color: #7f8c8d;
+    margin-left: 8px;
+}
+
+.x402-paywall-network {
+    font-size: 14px;
+    color: #7f8c8d;
+    text-transform: capitalize;
+}
+
+.x402-paywall-instructions {
+    text-align: left;
+    background: #f9f9f9;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 30px auto;
+    max-width: 500px;
+}
+
+.x402-paywall-instructions p {
+    font-weight: 600;
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.x402-paywall-instructions ol {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.x402-paywall-instructions li {
+    margin-bottom: 10px;
+    color: #555;
+    line-height: 1.6;
+}
+
+.x402-paywall-info {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.x402-paywall-info p {
+    margin: 0;
+    color: #999;
+}
+
+.x402-paywall-info a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.x402-paywall-info a:hover {
+    text-decoration: underline;
+}
+
+/* Author/Editor notice */
+.x402-paywall-notice {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 8px;
+    padding: 15px 20px;
+    margin-bottom: 30px;
+}
+
+.x402-paywall-author-notice {
+    background: #d1ecf1;
+    border-color: #0c5460;
+    color: #0c5460;
+}
+
+.x402-paywall-notice strong {
+    font-weight: 600;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 768px) {
+    .x402-paywall-message {
+        padding: 30px 20px;
+    }
+    
+    .x402-paywall-icon {
+        font-size: 48px;
+    }
+    
+    .x402-paywall-message h3 {
+        font-size: 24px;
+    }
+    
+    .x402-paywall-price {
+        font-size: 28px;
+    }
+    
+    .x402-paywall-currency {
+        font-size: 20px;
+    }
+    
+    .x402-paywall-details,
+    .x402-paywall-instructions {
+        padding: 15px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .x402-paywall-message {
+        padding: 20px 15px;
+        border-radius: 8px;
+    }
+    
+    .x402-paywall-message h3 {
+        font-size: 20px;
+    }
+    
+    .x402-paywall-message > p {
+        font-size: 14px;
+    }
+    
+    .x402-paywall-price {
+        font-size: 24px;
+    }
+}
