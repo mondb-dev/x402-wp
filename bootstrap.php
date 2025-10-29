@@ -96,12 +96,16 @@ function x402_paywall_setup_notice() {
     
     // Check if user has already configured payment addresses
     $user_id = get_current_user_id();
-    $profile = X402_Paywall_DB::get_user_profile($user_id);
     
-    if ($profile && ($profile->evm_address || $profile->spl_address)) {
-        // User has configured addresses, dismiss the notice
-        update_option('x402_paywall_setup_notice_dismissed', true);
-        return;
+    // Only check profile if the DB class is available
+    if (class_exists('X402_Paywall_DB')) {
+        $profile = X402_Paywall_DB::get_user_profile($user_id);
+        
+        if ($profile && ($profile->evm_address || $profile->spl_address)) {
+            // User has configured addresses, dismiss the notice
+            update_option('x402_paywall_setup_notice_dismissed', true);
+            return;
+        }
     }
     
     ?>

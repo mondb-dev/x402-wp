@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
  */
 spl_autoload_register(function ($class) {
     // Check if class is in X402 namespace
-    if (strpos($class, 'X402\\') !== 0) {
+    if (!str_starts_with($class, 'X402\\')) {
         return;
     }
     

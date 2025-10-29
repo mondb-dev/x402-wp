@@ -48,14 +48,15 @@ composer install --no-dev
    # Create vendor directory structure
    mkdir -p vendor/x402-php
    
-   # Clone x402-php
-   git clone https://github.com/mondb-dev/x402-php.git /tmp/x402-php-temp
+   # Clone x402-php to a temporary directory
+   X402_TEMP_DIR=$(mktemp -d)
+   git clone https://github.com/mondb-dev/x402-php.git "$X402_TEMP_DIR"
    
    # Copy source files
-   cp -r /tmp/x402-php-temp/src vendor/x402-php/
+   cp -r "$X402_TEMP_DIR/src" vendor/x402-php/
    
    # Clean up
-   rm -rf /tmp/x402-php-temp
+   rm -rf "$X402_TEMP_DIR"
    ```
 
 3. Create a bootstrap autoloader (bootstrap.php should handle this):
