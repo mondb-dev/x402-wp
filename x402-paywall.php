@@ -37,9 +37,12 @@ if (version_compare(PHP_VERSION, '8.1', '<')) {
     return;
 }
 
-// Load Composer autoloader
-if (file_exists(X402_PAYWALL_PLUGIN_DIR . 'vendor/autoload.php')) {
-    require_once X402_PAYWALL_PLUGIN_DIR . 'vendor/autoload.php';
+// Load bootstrap file (handles dependency loading)
+require_once X402_PAYWALL_PLUGIN_DIR . 'bootstrap.php';
+
+// If dependencies aren't loaded, stop here
+if (!class_exists('X402\Facilitator\FacilitatorClient')) {
+    return;
 }
 
 // Include core plugin class
