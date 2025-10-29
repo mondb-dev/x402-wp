@@ -43,25 +43,23 @@ composer install --no-dev
    composer require guzzlehttp/guzzle:^7.8
    ```
 
-2. Clone the x402-php library:
+2. Clone and set up the x402-php library:
    ```bash
-   mkdir -p vendor/mondb-dev
-   cd vendor/mondb-dev
-   git clone https://github.com/mondb-dev/x402-php.git
-   cd x402-php
-   composer install --no-dev
-   cd ../../..
+   # Create vendor directory structure
+   mkdir -p vendor/x402-php
+   
+   # Clone x402-php
+   git clone https://github.com/mondb-dev/x402-php.git /tmp/x402-php-temp
+   
+   # Copy source files
+   cp -r /tmp/x402-php-temp/src vendor/x402-php/
+   
+   # Clean up
+   rm -rf /tmp/x402-php-temp
    ```
 
-3. Create a custom autoloader (vendor/autoload.php) if needed:
-   ```php
-   <?php
-   // Load Guzzle
-   require_once __DIR__ . '/autoload.php';
-   
-   // Load x402-php
-   require_once __DIR__ . '/mondb-dev/x402-php/vendor/autoload.php';
-   ```
+3. Create a bootstrap autoloader (bootstrap.php should handle this):
+   The plugin's bootstrap.php file will automatically load the x402-php classes from vendor/x402-php/src/
 
 ### 3. Activate the Plugin
 

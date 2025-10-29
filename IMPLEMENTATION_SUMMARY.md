@@ -207,8 +207,9 @@ This document summarizes the implementation of the X402 Paywall WordPress plugin
 
 1. **x402-php** - X402 protocol implementation
    - Source: https://github.com/mondb-dev/x402-php
-   - Version: dev-main
+   - Integration: Manual installation or bundled
    - Purpose: Payment protocol handling
+   - Note: Not published on Packagist yet, requires manual setup
 
 2. **guzzlehttp/guzzle** - HTTP client
    - Version: ^7.8

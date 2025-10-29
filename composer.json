@@ -22,11 +22,6 @@
         }
     ],
     "require-dev": {},
-    "autoload": {
-        "psr-4": {
-            "X402\\": "vendor-x402/x402-php/src/"
-        }
-    },
     "config": {
         "optimize-autoloader": true,
         "sort-packages": true,

@@ -15,9 +15,21 @@ if (!defined('ABSPATH')) {
  * Check if dependencies are installed
  */
 function x402_paywall_check_dependencies() {
-    $vendor_autoload = X402_PAYWALL_PLUGIN_DIR . 'vendor/autoload.php';
+    // Check for autoloader
+    $autoloader = X402_PAYWALL_PLUGIN_DIR . 'autoloader.php';
+    if (!file_exists($autoloader)) {
+        return false;
+    }
     
-    if (!file_exists($vendor_autoload)) {
+    // Check for x402-php source files
+    $x402_facilitator = X402_PAYWALL_PLUGIN_DIR . 'vendor/x402-php/src/Facilitator/FacilitatorClient.php';
+    if (!file_exists($x402_facilitator)) {
+        return false;
+    }
+    
+    // Check for Guzzle (from Composer)
+    $composer_autoload = X402_PAYWALL_PLUGIN_DIR . 'vendor/autoload.php';
+    if (!file_exists($composer_autoload)) {
         return false;
     }
     
@@ -28,10 +40,11 @@ function x402_paywall_check_dependencies() {
  * Load dependencies
  */
 function x402_paywall_load_dependencies() {
-    $vendor_autoload = X402_PAYWALL_PLUGIN_DIR . 'vendor/autoload.php';
+    // Load our custom autoloader
+    $autoloader = X402_PAYWALL_PLUGIN_DIR . 'autoloader.php';
     
-    if (file_exists($vendor_autoload)) {
-        require_once $vendor_autoload;
+    if (file_exists($autoloader)) {
+        require_once $autoloader;
         return true;
     }
     
