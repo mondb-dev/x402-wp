@@ -80,20 +80,22 @@ class X402_Paywall_DB {
         
         $data = array(
             'post_id' => $payment_data['post_id'],
-            'user_address' => $payment_data['user_address'],
+            'user_address' => strtolower($payment_data['user_address']),
             'amount' => $payment_data['amount'],
             'token_address' => $payment_data['token_address'],
             'network' => $payment_data['network'],
             'transaction_hash' => $payment_data['transaction_hash'] ?? null,
+            'payer_identifier' => isset($payment_data['payer_identifier']) ? strtolower($payment_data['payer_identifier']) : null,
+            'settlement_proof' => $payment_data['settlement_proof'] ?? null,
             'payment_status' => $payment_data['payment_status'] ?? 'pending',
         );
-        
+
         $result = $wpdb->insert(
             $table_name,
             $data,
-            array('%d', '%s', '%s', '%s', '%s', '%s', '%s')
+            array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
         );
-        
+
         return $result ? $wpdb->insert_id : false;
     }
     
@@ -152,15 +154,18 @@ class X402_Paywall_DB {
         global $wpdb;
         $table_name = $wpdb->prefix . 'x402_payment_logs';
         
+        $normalized_address = strtolower($user_address);
+
         $result = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $table_name 
-            WHERE post_id = %d 
-            AND user_address = %s 
+            "SELECT COUNT(*) FROM $table_name
+            WHERE post_id = %d
+            AND (user_address = %s OR payer_identifier = %s)
             AND payment_status = 'verified'",
             $post_id,
-            strtolower($user_address)
+            $normalized_address,
+            $normalized_address
         ));
-        
+
         return $result > 0;
     }
 }

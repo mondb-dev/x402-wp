@@ -53,11 +53,14 @@ class X402_Paywall_Activator {
             token_address varchar(100) NOT NULL,
             network varchar(50) NOT NULL,
             transaction_hash varchar(100) DEFAULT NULL,
+            payer_identifier varchar(200) DEFAULT NULL,
+            settlement_proof longtext DEFAULT NULL,
             payment_status varchar(20) NOT NULL DEFAULT 'pending',
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY post_id (post_id),
             KEY user_address (user_address),
+            KEY payer_identifier (payer_identifier),
             KEY payment_status (payment_status),
             KEY created_at (created_at)
         ) $charset_collate;";
