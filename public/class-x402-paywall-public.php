@@ -79,6 +79,18 @@ class X402_Paywall_Public {
                 X402_PAYWALL_VERSION,
                 true
             );
+
+            wp_localize_script(
+                'x402-paywall-public',
+                'x402PaywallData',
+                array(
+                    'errorTitle' => esc_html__('Payment Error', 'x402-paywall'),
+                    'defaultErrorMessage' => esc_html__('We were unable to verify your payment. Please try again.', 'x402-paywall'),
+                    'dismissLabel' => esc_html__('Dismiss', 'x402-paywall'),
+                    'referenceLabel' => esc_html__('Support reference: %s', 'x402-paywall'),
+                    'cookiePath' => defined('COOKIEPATH') ? (COOKIEPATH ?: '/') : '/',
+                )
+            );
         }
     }
     
@@ -346,7 +358,8 @@ class X402_Paywall_Public {
 
         $result = $this->payment_handler->process_payment($requirements);
 
-        if (!$result['verified']) {
+        if (empty($result['verified'])) {
+            $this->handle_failed_payment_attempt($post_id, $paywall_config, $payment_header, $result);
             return;
         }
 
@@ -398,6 +411,110 @@ class X402_Paywall_Public {
         if ($session_header) {
             header(self::SESSION_HEADER . ': ' . $session_header);
         }
+
+        wp_safe_redirect(get_permalink($post_id));
+        exit;
+    }
+
+    /**
+     * Handle failed payment attempt responses and logging.
+     *
+     * @param int   $post_id         Post identifier.
+     * @param array $paywall_config  Paywall configuration for the post.
+     * @param array $payment_header  Parsed X-Payment header.
+     * @param array $result          Raw payment handler result.
+     */
+    private function handle_failed_payment_attempt($post_id, $paywall_config, $payment_header, $result) {
+        $error_details = isset($result['error']) && is_array($result['error']) ? $result['error'] : array();
+
+        $status_code = isset($error_details['status_code']) ? (int) $error_details['status_code'] : 402;
+        if ($status_code < 400 || $status_code > 599) {
+            $status_code = 402;
+        }
+
+        $error_code = isset($error_details['code']) && is_string($error_details['code']) ? trim($error_details['code']) : '';
+        $facilitator_message = isset($error_details['facilitator_message']) && is_string($error_details['facilitator_message'])
+            ? trim($error_details['facilitator_message'])
+            : '';
+
+        $raw_message = isset($error_details['message']) && is_string($error_details['message'])
+            ? $error_details['message']
+            : __('Unable to verify the payment with the facilitator.', 'x402-paywall');
+
+        $sanitized_message = trim(wp_strip_all_tags($raw_message));
+        if ($sanitized_message === '') {
+            $sanitized_message = __('Unable to verify the payment with the facilitator.', 'x402-paywall');
+        }
+
+        $payer_identifier = $this->extract_user_address_from_payment($payment_header, $paywall_config['network']);
+
+        if (!$payer_identifier) {
+            $payer_identifier = $this->extract_payer_identifier_from_result($result, $paywall_config['network']);
+        }
+
+        $facilitator_reference = null;
+
+        if (isset($error_details['reference']) && is_string($error_details['reference'])) {
+            $facilitator_reference = trim($error_details['reference']);
+
+            if ($facilitator_reference === '') {
+                $facilitator_reference = null;
+            }
+        }
+
+        $log_payload = array(
+            'post_id' => $post_id,
+            'user_address' => $payer_identifier,
+            'normalized_address' => $payer_identifier,
+            'payer_identifier' => $payer_identifier,
+            'amount' => $paywall_config['amount'],
+            'token_address' => $paywall_config['token_address'],
+            'network' => $paywall_config['network'],
+            'transaction_hash' => null,
+            'payment_status' => 'failed',
+            'facilitator_signature' => null,
+            'facilitator_reference' => $facilitator_reference,
+        );
+
+        $encoded_error = $this->encode_error_payload_for_storage($error_details, $status_code, $facilitator_message, $sanitized_message, $error_code);
+
+        if ($encoded_error !== null) {
+            $log_payload['settlement_proof'] = $encoded_error;
+        }
+
+        $support_reference = null;
+
+        $log_id = X402_Paywall_DB::log_payment($log_payload);
+
+        if ($log_id) {
+            $support_reference = $this->format_support_reference($log_id);
+        }
+
+        $public_message = $sanitized_message;
+
+        if ($error_code !== '') {
+            /* translators: %s: Error code returned from facilitator. */
+            $public_message .= ' ' . sprintf(__('(Error code: %s)', 'x402-paywall'), $error_code);
+        }
+
+        if ($support_reference) {
+            /* translators: %s: Support reference identifier. */
+            $public_message .= ' ' . sprintf(__('Support reference: %s', 'x402-paywall'), $support_reference);
+        }
+
+        if ($this->should_return_json_error_response()) {
+            $this->send_json_error_response($public_message, $status_code, $error_code, $support_reference, $error_details);
+            return;
+        }
+
+        $this->queue_frontend_error_notice(
+            array(
+                'message' => $sanitized_message,
+                'code' => $error_code,
+                'status' => $status_code,
+                'reference' => $support_reference,
+            )
+        );
 
         wp_safe_redirect(get_permalink($post_id));
         exit;
@@ -1207,5 +1324,179 @@ class X402_Paywall_Public {
         }
 
         return $whole . '.' . $fraction;
+    }
+
+    /**
+     * Encode error details for persistence in the payment log.
+     *
+     * @param array  $error_details       Raw error payload from facilitator/library.
+     * @param int    $status_code         HTTP status code for the failure.
+     * @param string $facilitator_message Message returned by the facilitator, if available.
+     * @param string $public_message      Sanitized message intended for user display.
+     * @param string $error_code          Facilitator error code identifier.
+     * @return string|null JSON encoded payload or null on failure.
+     */
+    private function encode_error_payload_for_storage($error_details, $status_code, $facilitator_message, $public_message, $error_code) {
+        $payload = array(
+            'status_code' => $status_code,
+            'error_code' => $error_code,
+            'message' => $facilitator_message !== '' ? $facilitator_message : $public_message,
+        );
+
+        if (!empty($error_details) && is_array($error_details)) {
+            $payload['details'] = $error_details;
+        }
+
+        $encoded = wp_json_encode($payload);
+
+        if ($encoded === false) {
+            $encoded = json_encode($payload);
+        }
+
+        return is_string($encoded) ? $encoded : null;
+    }
+
+    /**
+     * Format the support reference identifier for a payment log entry.
+     *
+     * @param int $log_id Log identifier.
+     * @return string
+     */
+    private function format_support_reference($log_id) {
+        $numeric = (int) $log_id;
+
+        if ($numeric <= 0) {
+            return (string) $log_id;
+        }
+
+        return sprintf('X402-%06d', $numeric);
+    }
+
+    /**
+     * Determine whether the current request prefers a JSON error response.
+     *
+     * @return bool
+     */
+    private function should_return_json_error_response() {
+        if (defined('REST_REQUEST') && REST_REQUEST) {
+            return true;
+        }
+
+        if (function_exists('wp_is_json_request') && wp_is_json_request()) {
+            return true;
+        }
+
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+            return true;
+        }
+
+        if (!empty($_SERVER['HTTP_ACCEPT']) && strpos(strtolower((string) $_SERVER['HTTP_ACCEPT']), 'application/json') !== false) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Send JSON error response detailing why access was denied.
+     *
+     * @param string     $message           Human-readable message.
+     * @param int        $status_code       HTTP status code to send.
+     * @param string     $error_code        Facilitator error code, if available.
+     * @param string|null $reference        Support reference identifier.
+     * @param array      $error_details     Additional error details to include in response.
+     */
+    private function send_json_error_response($message, $status_code, $error_code, $reference, $error_details) {
+        status_header($status_code);
+        nocache_headers();
+
+        $payload = array(
+            'success' => false,
+            'error' => array(
+                'message' => $message,
+                'status' => $status_code,
+            ),
+        );
+
+        if ($error_code !== '') {
+            $payload['error']['code'] = $error_code;
+        }
+
+        if ($reference) {
+            $payload['error']['reference'] = $reference;
+        }
+
+        if (!empty($error_details) && is_array($error_details)) {
+            $payload['error']['details'] = $error_details;
+        }
+
+        $charset = get_option('blog_charset');
+        header('Content-Type: application/json; charset=' . ($charset ? $charset : 'utf-8'));
+
+        $body = wp_json_encode($payload);
+
+        if ($body === false) {
+            $body = json_encode($payload);
+        }
+
+        echo $body;
+        exit;
+    }
+
+    /**
+     * Queue a front-end notice via a short-lived cookie for display on the next render.
+     *
+     * @param array $data Error payload containing message, status, code, and reference.
+     */
+    private function queue_frontend_error_notice($data) {
+        if (headers_sent()) {
+            return;
+        }
+
+        $message = isset($data['message']) ? trim((string) $data['message']) : '';
+
+        if ($message === '') {
+            return;
+        }
+
+        $payload = array('message' => $message);
+
+        if (!empty($data['status'])) {
+            $payload['status'] = (int) $data['status'];
+        }
+
+        if (!empty($data['code'])) {
+            $payload['code'] = (string) $data['code'];
+        }
+
+        if (!empty($data['reference'])) {
+            $payload['reference'] = (string) $data['reference'];
+        }
+
+        $encoded = wp_json_encode($payload);
+
+        if ($encoded === false) {
+            $encoded = json_encode($payload);
+        }
+
+        if (!is_string($encoded) || $encoded === '') {
+            return;
+        }
+
+        $cookie_value = rawurlencode(base64_encode($encoded));
+
+        $options = array(
+            'expires' => time() + 300,
+            'path' => defined('COOKIEPATH') ? (COOKIEPATH ?: '/') : '/',
+            'secure' => is_ssl(),
+            'httponly' => false,
+            'samesite' => 'Lax',
+        );
+
+        if (defined('COOKIE_DOMAIN') && COOKIE_DOMAIN) {
+            $options['domain'] = COOKIE_DOMAIN;
+        }
+
+        setcookie('x402_paywall_error', $cookie_value, $options);
     }
 }

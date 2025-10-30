@@ -120,28 +120,152 @@ class X402_Paywall_Payment_Handler {
      */
     public function process_payment($requirements) {
         if (!$this->handler) {
-            return array('verified' => false, 'settlement' => null);
+            return $this->create_error_result(
+                __('Payment handler not initialized', 'x402-paywall'),
+                'handler_not_initialized',
+                500
+            );
         }
-        
+
         try {
             // Convert $_SERVER to array if needed
             $server_data = $_SERVER;
-            
+
             $result = $this->handler->processPayment($server_data, $requirements);
+
+            if (!is_array($result)) {
+                return $this->create_error_result(
+                    __('Unexpected payment handler response', 'x402-paywall'),
+                    'invalid_handler_response',
+                    500
+                );
+            }
+
+            if (!empty($result['verified'])) {
+                return $result;
+            }
+
+            if (!isset($result['error'])) {
+                return array_merge(
+                    array(
+                        'verified' => false,
+                        'payload' => $result['payload'] ?? null,
+                        'settlement' => $result['settlement'] ?? null,
+                    ),
+                    array('error' => null)
+                );
+            }
+
             return $result;
         } catch (PaymentRequiredException $e) {
             error_log('X402 Paywall: Payment required - ' . $e->getMessage());
-            return array('verified' => false, 'settlement' => null);
+
+            $status_code = $this->extract_status_code_from_exception($e, 402);
+            $facilitator_message = $this->extract_facilitator_message_from_exception($e);
+
+            return $this->create_error_result(
+                $e->getMessage(),
+                $e->invalidReason ?? 'payment_required',
+                $status_code,
+                $facilitator_message
+            );
         } catch (ValidationException $e) {
             error_log('X402 Paywall: Validation error - ' . $e->getMessage());
-            return array('verified' => false, 'settlement' => null);
+
+            return $this->create_error_result(
+                $e->getMessage(),
+                'validation_error',
+                400
+            );
         } catch (FacilitatorException $e) {
             error_log('X402 Paywall: Facilitator error - ' . $e->getMessage());
-            return array('verified' => false, 'settlement' => null);
+
+            $status_code = $this->extract_status_code_from_exception($e, 502);
+
+            return $this->create_error_result(
+                $e->getMessage(),
+                'facilitator_error',
+                $status_code,
+                $e->getMessage()
+            );
         } catch (Exception $e) {
             error_log('X402 Paywall: Unexpected error - ' . $e->getMessage());
-            return array('verified' => false, 'settlement' => null);
+
+            return $this->create_error_result(
+                $e->getMessage(),
+                'unexpected_error',
+                500
+            );
         }
+    }
+
+    /**
+     * Create a standardized error result for payment processing failures.
+     *
+     * @param string $message Error message for logging/user feedback.
+     * @param string|null $code Internal error code identifier.
+     * @param int $status_code HTTP status code.
+     * @param string|null $facilitator_message Optional facilitator specific message.
+     * @return array
+     */
+    private function create_error_result($message, $code = null, $status_code = 500, $facilitator_message = null) {
+        $error = array(
+            'message' => $message,
+            'code' => $code,
+            'status_code' => $status_code,
+        );
+
+        if ($facilitator_message !== null && $facilitator_message !== '') {
+            $error['facilitator_message'] = $facilitator_message;
+        }
+
+        return array(
+            'verified' => false,
+            'payload' => null,
+            'settlement' => null,
+            'error' => $error,
+        );
+    }
+
+    /**
+     * Extract HTTP status code from nested exceptions.
+     *
+     * @param \Throwable $exception Exception chain to inspect.
+     * @param int $default Default status code when none found.
+     * @return int
+     */
+    private function extract_status_code_from_exception($exception, $default = 500) {
+        $current = $exception;
+
+        while ($current) {
+            if ($current instanceof \GuzzleHttp\Exception\RequestException && $current->hasResponse()) {
+                return (int) $current->getResponse()->getStatusCode();
+            }
+
+            $current = $current->getPrevious();
+        }
+
+        return $default;
+    }
+
+    /**
+     * Extract facilitator message from nested exceptions when available.
+     *
+     * @param \Throwable $exception Exception chain to inspect.
+     * @return string|null
+     */
+    private function extract_facilitator_message_from_exception($exception) {
+        $current = $exception;
+
+        while ($current) {
+            if ($current instanceof FacilitatorException) {
+                return $current->getMessage();
+            }
+
+            $current = $current->getPrevious();
+        }
+
+        return null;
     }
     
     /**
