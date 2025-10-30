@@ -36,6 +36,7 @@ class X402_Paywall {
         // Core classes
         require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-db.php';
         require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-payment-handler.php';
+        require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-token-registry.php';
         
         // Admin classes
         if (is_admin()) {
