@@ -38,6 +38,60 @@
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+.x402-paywall-error-notice {
+    position: relative;
+    text-align: left;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    color: #7f1d1d;
+    border-radius: 10px;
+    padding: 16px 18px 18px 18px;
+    margin-bottom: 20px;
+}
+
+.x402-paywall-error-header {
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 16px;
+}
+
+.x402-paywall-error-message {
+    margin: 0 0 6px 0;
+    font-size: 14px;
+}
+
+.x402-paywall-error-meta,
+.x402-paywall-error-reference {
+    margin: 0;
+    font-size: 13px;
+    color: #991b1b;
+}
+
+.x402-paywall-error-reference {
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+.x402-paywall-error-dismiss {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 6px;
+    border-radius: 4px;
+}
+
+.x402-paywall-error-dismiss:hover,
+.x402-paywall-error-dismiss:focus {
+    background: rgba(127, 29, 29, 0.1);
+    outline: none;
+}
+
 .x402-paywall-icon {
     font-size: 64px;
     margin-bottom: 20px;
@@ -157,7 +211,11 @@
     .x402-paywall-message {
         padding: 30px 20px;
     }
-    
+
+    .x402-paywall-error-notice {
+        padding-right: 56px;
+    }
+
     .x402-paywall-icon {
         font-size: 48px;
     }
@@ -185,7 +243,11 @@
         padding: 20px 15px;
         border-radius: 8px;
     }
-    
+
+    .x402-paywall-error-notice {
+        padding: 14px 50px 16px 16px;
+    }
+
     .x402-paywall-message h3 {
         font-size: 20px;
     }
