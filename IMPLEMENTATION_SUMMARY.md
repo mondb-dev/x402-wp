@@ -157,7 +157,8 @@ This document summarizes the implementation of the X402 Paywall WordPress plugin
 - `_x402_paywall_network_type` - String (evm/spl)
 - `_x402_paywall_network` - String (base-mainnet, etc.)
 - `_x402_paywall_token_address` - String (contract address)
-- `_x402_paywall_amount` - Float (human-readable amount)
+- `_x402_paywall_amount` - String (token amount in atomic units)
+- `_x402_paywall_amount_format` - String flag for amount storage format
 - `_x402_paywall_token_decimals` - Integer (6 for USDC)
 - `_x402_paywall_token_name` - String (for EIP-712)
 - `_x402_paywall_token_version` - String (for EIP-712)
