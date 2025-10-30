@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use X402\Encoding\Encoder;
 use X402\Types\ExactPaymentPayload;
 use X402\Types\PaymentPayload;
 
@@ -20,6 +21,13 @@ class X402_Paywall_Public {
 
     private const SESSION_TTL = 1800;
     private const SESSION_HEADER = 'X-Payment-Session';
+
+    /**
+     * Cached payment header for current request
+     *
+     * @var array|null
+     */
+    private $cached_payment_header = null;
     
     /**
      * Payment handler instance
@@ -150,10 +158,10 @@ class X402_Paywall_Public {
         
         // Check for X-Payment header
         $payment_header = $this->get_payment_header();
-        
+
         if ($payment_header) {
             // Process payment
-            $this->process_payment_request($post->ID, $paywall_config);
+            $this->process_payment_request($post->ID, $paywall_config, $payment_header);
         } else {
             // Check if this is a direct API request for payment info
             if ($this->is_payment_info_request()) {
@@ -161,22 +169,118 @@ class X402_Paywall_Public {
             }
         }
     }
-    
+
     /**
      * Get payment header from request
      *
-     * @return string|null Payment header value
+     * @return array|null Payment header data
      */
     private function get_payment_header() {
+        if ($this->cached_payment_header !== null) {
+            return $this->cached_payment_header;
+        }
+
         $headers = array('HTTP_X_PAYMENT', 'X-Payment');
-        
+
         foreach ($headers as $header) {
-            if (!empty($_SERVER[$header])) {
-                return $_SERVER[$header];
+            if (empty($_SERVER[$header])) {
+                continue;
+            }
+
+            $parsed = $this->parse_payment_header_value((string) $_SERVER[$header]);
+
+            if ($parsed !== null) {
+                $this->cached_payment_header = $parsed;
+                return $this->cached_payment_header;
             }
         }
-        
+
+        $this->cached_payment_header = null;
         return null;
+    }
+
+    /**
+     * Parse and validate the X-Payment header value
+     *
+     * @param string $header_value Raw header string
+     * @return array|null
+     */
+    private function parse_payment_header_value($header_value) {
+        $header_value = trim((string) $header_value);
+
+        if ($header_value === '') {
+            return null;
+        }
+
+        try {
+            $payload = Encoder::decodePaymentHeader($header_value);
+        } catch (\Throwable $exception) {
+            error_log('X402 Paywall: Failed to decode X-Payment header - ' . $exception->getMessage());
+            return null;
+        }
+
+        if (!$payload instanceof PaymentPayload || !$this->validate_payment_payload_structure($payload)) {
+            error_log('X402 Paywall: Invalid payment payload structure in X-Payment header');
+            return null;
+        }
+
+        $raw_payer = null;
+        $normalized_payer = null;
+
+        if ($payload->payload instanceof ExactPaymentPayload && isset($payload->payload->authorization->from)) {
+            $raw_payer = $payload->payload->authorization->from;
+            $normalized_payer = $this->normalize_wallet_address($raw_payer, $payload->network);
+        }
+
+        return array(
+            'raw' => $header_value,
+            'payload' => $payload,
+            'network' => $payload->network,
+            'payer' => $raw_payer,
+            'normalized_payer' => $normalized_payer,
+        );
+    }
+
+    /**
+     * Validate decoded payment payload
+     *
+     * @param PaymentPayload $payload
+     * @return bool
+     */
+    private function validate_payment_payload_structure($payload) {
+        if (!$payload instanceof PaymentPayload) {
+            return false;
+        }
+
+        if ($payload->scheme !== 'exact') {
+            return false;
+        }
+
+        if ($this->is_svm_network($payload->network)) {
+            if (!($payload->payload instanceof \X402\Types\ExactSvmPayload)) {
+                return false;
+            }
+
+            $transaction = $payload->payload->transaction ?? '';
+            return is_string($transaction) && trim($transaction) !== '';
+        }
+
+        if (!($payload->payload instanceof ExactPaymentPayload)) {
+            return false;
+        }
+
+        $signature = $payload->payload->signature ?? '';
+        $authorization = $payload->payload->authorization ?? null;
+
+        if (!is_string($signature) || trim($signature) === '') {
+            return false;
+        }
+
+        if ($authorization === null || !isset($authorization->from) || !is_string($authorization->from)) {
+            return false;
+        }
+
+        return $this->normalize_wallet_address($authorization->from, $payload->network) !== null;
     }
     
     /**
@@ -226,12 +330,18 @@ class X402_Paywall_Public {
      *
      * @param int $post_id Post ID
      * @param array $paywall_config Paywall configuration
+     * @param array $payment_header Parsed X-Payment header
      */
-    private function process_payment_request($post_id, $paywall_config) {
+    private function process_payment_request($post_id, $paywall_config, $payment_header) {
         $requirements = $this->payment_handler->create_payment_requirements($post_id, $paywall_config);
 
         if (!$requirements) {
             return;
+        }
+
+        if (isset($payment_header['raw'])) {
+            $_SERVER['HTTP_X_PAYMENT'] = $payment_header['raw'];
+            $_SERVER['X-Payment'] = $payment_header['raw'];
         }
 
         $result = $this->payment_handler->process_payment($requirements);
@@ -247,7 +357,11 @@ class X402_Paywall_Public {
             return;
         }
 
-        $payer_identifier = $this->extract_payer_identifier_from_result($result);
+        $payer_identifier = $this->extract_user_address_from_payment($payment_header, $paywall_config['network']);
+
+        if (!$payer_identifier) {
+            $payer_identifier = $this->extract_payer_identifier_from_result($result, $paywall_config['network']);
+        }
 
         if (!$payer_identifier) {
             error_log('X402 Paywall: Unable to determine payer identifier for post ' . $post_id);
@@ -258,9 +372,13 @@ class X402_Paywall_Public {
         $normalized_proof = $this->normalize_settlement_proof($settlement);
         $session_header = $this->store_verified_session($post_id, $payer_identifier, $normalized_proof);
 
+        $facilitator_signature = $this->extract_facilitator_signature($settlement);
+        $facilitator_reference = $this->extract_facilitator_reference($settlement);
+
         X402_Paywall_DB::log_payment(array(
             'post_id' => $post_id,
             'user_address' => $payer_identifier,
+            'normalized_address' => $payer_identifier,
             'payer_identifier' => $payer_identifier,
             'amount' => $paywall_config['amount'],
             'token_address' => $paywall_config['token_address'],
@@ -268,6 +386,8 @@ class X402_Paywall_Public {
             'transaction_hash' => $transaction_hash,
             'settlement_proof' => $normalized_proof,
             'payment_status' => 'verified',
+            'facilitator_signature' => $facilitator_signature,
+            'facilitator_reference' => $facilitator_reference,
         ));
 
         $this->payment_verified = true;
@@ -405,16 +525,200 @@ class X402_Paywall_Public {
      * @param array $result Payment handler result
      * @return string|null
      */
-    private function extract_payer_identifier_from_result($result) {
+    private function extract_payer_identifier_from_result($result, $network) {
         if (isset($result['settlement']['payer']) && !empty($result['settlement']['payer'])) {
-            return strtolower($result['settlement']['payer']);
+            return $this->normalize_wallet_address($result['settlement']['payer'], $network);
         }
 
         if (isset($result['payload']) && $result['payload'] instanceof PaymentPayload) {
             $payload = $result['payload']->payload;
 
             if ($payload instanceof ExactPaymentPayload && isset($payload->authorization->from)) {
-                return strtolower($payload->authorization->from);
+                return $this->normalize_wallet_address($payload->authorization->from, $network);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract normalized user address from payment header
+     *
+     * @param array $payment_header Parsed payment header
+     * @param string $expected_network Expected network identifier
+     * @return string|null
+     */
+    private function extract_user_address_from_payment($payment_header, $expected_network) {
+        if (!is_array($payment_header)) {
+            return null;
+        }
+
+        $network = $payment_header['network'] ?? $expected_network;
+
+        if (isset($payment_header['normalized_payer']) && $payment_header['normalized_payer']) {
+            return $payment_header['normalized_payer'];
+        }
+
+        if (isset($payment_header['payer'])) {
+            return $this->normalize_wallet_address($payment_header['payer'], $network);
+        }
+
+        if (isset($payment_header['payload']) && $payment_header['payload'] instanceof PaymentPayload) {
+            $payload = $payment_header['payload']->payload;
+
+            if ($payload instanceof ExactPaymentPayload && isset($payload->authorization->from)) {
+                return $this->normalize_wallet_address($payload->authorization->from, $network);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalize wallet address for storage and comparisons
+     *
+     * @param string|null $address Wallet address
+     * @param string $network Network identifier
+     * @return string|null
+     */
+    private function normalize_wallet_address($address, $network) {
+        if (!is_string($address)) {
+            return null;
+        }
+
+        $trimmed = trim($address);
+
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if ($this->is_svm_network($network)) {
+            $normalized = $this->normalize_spl_address($trimmed);
+
+            if ($normalized === null) {
+                return null;
+            }
+
+            return $normalized;
+        }
+
+        $lower = strtolower($trimmed);
+
+        if (!X402_Paywall_Payment_Handler::validate_evm_address($lower)) {
+            return null;
+        }
+
+        return $lower;
+    }
+
+    /**
+     * Normalize Solana/SPL wallet address
+     *
+     * @param string $address Wallet address
+     * @return string|null
+     */
+    private function normalize_spl_address($address) {
+        $normalized = preg_replace('/\s+/', '', $address);
+
+        if (!is_string($normalized) || $normalized === '') {
+            return null;
+        }
+
+        if (!X402_Paywall_Payment_Handler::validate_spl_address($normalized)) {
+            return null;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Determine if the network is Solana-based
+     *
+     * @param string $network Network identifier
+     * @return bool
+     */
+    private function is_svm_network($network) {
+        if (!is_string($network)) {
+            return false;
+        }
+
+        return str_starts_with($network, 'solana-');
+    }
+
+    /**
+     * Extract facilitator signature from settlement payload
+     *
+     * @param array $settlement Settlement payload
+     * @return string|null
+     */
+    private function extract_facilitator_signature($settlement) {
+        $proof = $this->get_settlement_proof_array($settlement);
+
+        if (!$proof) {
+            return null;
+        }
+
+        if (isset($proof['signature']) && is_string($proof['signature']) && trim($proof['signature']) !== '') {
+            return trim($proof['signature']);
+        }
+
+        if (isset($proof['signedMessage']['signature']) && is_string($proof['signedMessage']['signature']) && trim($proof['signedMessage']['signature']) !== '') {
+            return trim($proof['signedMessage']['signature']);
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract facilitator reference identifier
+     *
+     * @param array $settlement Settlement payload
+     * @return string|null
+     */
+    private function extract_facilitator_reference($settlement) {
+        $proof = $this->get_settlement_proof_array($settlement);
+
+        $candidates = array();
+
+        if (is_array($proof)) {
+            $candidates[] = $proof;
+
+            if (isset($proof['payload']) && is_array($proof['payload'])) {
+                $candidates[] = $proof['payload'];
+            }
+
+            if (isset($proof['signedMessage']) && is_array($proof['signedMessage'])) {
+                $candidates[] = $proof['signedMessage'];
+
+                if (isset($proof['signedMessage']['payload']) && is_array($proof['signedMessage']['payload'])) {
+                    $candidates[] = $proof['signedMessage']['payload'];
+                }
+            }
+        }
+
+        $keys = array('reference', 'transactionReference', 'transaction_reference', 'paymentReference', 'payment_reference', 'id', 'paymentId', 'payment_id', 'requestId', 'request_id');
+
+        foreach ($candidates as $candidate) {
+            foreach ($keys as $key) {
+                if (isset($candidate[$key]) && is_string($candidate[$key])) {
+                    $value = trim($candidate[$key]);
+
+                    if ($value !== '') {
+                        return $value;
+                    }
+                }
+            }
+        }
+
+        $fallback_keys = array('reference', 'transaction', 'transactionHash', 'transaction_hash');
+
+        foreach ($fallback_keys as $fallback_key) {
+            if (isset($settlement[$fallback_key]) && is_string($settlement[$fallback_key])) {
+                $value = trim($settlement[$fallback_key]);
+
+                if ($value !== '') {
+                    return $value;
+                }
             }
         }
 

@@ -48,7 +48,8 @@ class X402_Paywall_Activator {
         $sql = "CREATE TABLE IF NOT EXISTS $table_name (
             id bigint(20) NOT NULL AUTO_INCREMENT,
             post_id bigint(20) NOT NULL,
-            user_address varchar(100) NOT NULL,
+            user_address varchar(200) NOT NULL,
+            normalized_address varchar(200) NOT NULL,
             amount varchar(78) NOT NULL,
             token_address varchar(100) NOT NULL,
             network varchar(50) NOT NULL,
@@ -56,12 +57,16 @@ class X402_Paywall_Activator {
             payer_identifier varchar(200) DEFAULT NULL,
             settlement_proof longtext DEFAULT NULL,
             payment_status varchar(20) NOT NULL DEFAULT 'pending',
+            facilitator_signature text DEFAULT NULL,
+            facilitator_reference varchar(191) DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY post_id (post_id),
             KEY user_address (user_address),
+            KEY normalized_address (normalized_address),
             KEY payer_identifier (payer_identifier),
             KEY payment_status (payment_status),
+            KEY facilitator_reference (facilitator_reference),
             KEY created_at (created_at)
         ) $charset_collate;";
         

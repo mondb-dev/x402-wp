@@ -78,22 +78,42 @@ class X402_Paywall_DB {
         global $wpdb;
         $table_name = $wpdb->prefix . 'x402_payment_logs';
         
+        $raw_address = isset($payment_data['user_address']) ? trim((string) $payment_data['user_address']) : null;
+        $normalized_address = isset($payment_data['normalized_address']) ? trim((string) $payment_data['normalized_address']) : null;
+
+        if ($normalized_address === null || $normalized_address === '') {
+            $normalized_address = self::normalize_address_for_lookup($raw_address);
+        }
+
+        if ($raw_address === null || $raw_address === '') {
+            $raw_address = $normalized_address;
+        }
+
+        $payer_identifier = isset($payment_data['payer_identifier']) ? trim((string) $payment_data['payer_identifier']) : null;
+
+        if ($payer_identifier === null || $payer_identifier === '') {
+            $payer_identifier = $normalized_address;
+        }
+
         $data = array(
-            'post_id' => $payment_data['post_id'],
-            'user_address' => strtolower($payment_data['user_address']),
+            'post_id' => (int) $payment_data['post_id'],
+            'user_address' => $raw_address,
+            'normalized_address' => $normalized_address,
             'amount' => $payment_data['amount'],
             'token_address' => $payment_data['token_address'],
             'network' => $payment_data['network'],
             'transaction_hash' => $payment_data['transaction_hash'] ?? null,
-            'payer_identifier' => isset($payment_data['payer_identifier']) ? strtolower($payment_data['payer_identifier']) : null,
+            'payer_identifier' => $payer_identifier,
             'settlement_proof' => $payment_data['settlement_proof'] ?? null,
             'payment_status' => $payment_data['payment_status'] ?? 'pending',
+            'facilitator_signature' => $payment_data['facilitator_signature'] ?? null,
+            'facilitator_reference' => $payment_data['facilitator_reference'] ?? null,
         );
 
         $result = $wpdb->insert(
             $table_name,
             $data,
-            array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+            array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
         );
 
         return $result ? $wpdb->insert_id : false;
@@ -154,18 +174,43 @@ class X402_Paywall_DB {
         global $wpdb;
         $table_name = $wpdb->prefix . 'x402_payment_logs';
         
-        $normalized_address = strtolower($user_address);
+        $normalized_address = self::normalize_address_for_lookup($user_address);
 
         $result = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM $table_name
             WHERE post_id = %d
-            AND (user_address = %s OR payer_identifier = %s)
+            AND (normalized_address = %s OR payer_identifier = %s OR user_address = %s)
             AND payment_status = 'verified'",
             $post_id,
+            $normalized_address,
             $normalized_address,
             $normalized_address
         ));
 
         return $result > 0;
+    }
+
+    /**
+     * Normalize wallet address for consistent lookups
+     *
+     * @param string|null $address Wallet address
+     * @return string
+     */
+    private static function normalize_address_for_lookup($address) {
+        if (!is_string($address)) {
+            return '';
+        }
+
+        $trimmed = trim($address);
+
+        if ($trimmed === '') {
+            return '';
+        }
+
+        if (str_starts_with($trimmed, '0x')) {
+            return strtolower($trimmed);
+        }
+
+        return $trimmed;
     }
 }
