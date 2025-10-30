@@ -923,12 +923,18 @@ class X402_Paywall_Public {
         $cookie_name = $this->get_session_cookie_name($post_id);
         $value = $token . '.' . $signature;
 
+        $is_secure = is_ssl();
+
+        if (function_exists('wp_is_using_https') && wp_is_using_https()) {
+            $is_secure = true;
+        }
+
         $params = array(
             'expires' => time() + self::SESSION_TTL,
             'path' => defined('COOKIEPATH') ? COOKIEPATH : '/',
-            'secure' => is_ssl(),
+            'secure' => $is_secure,
             'httponly' => true,
-            'samesite' => 'Lax',
+            'samesite' => 'Strict',
         );
 
         if (defined('COOKIE_DOMAIN') && COOKIE_DOMAIN) {
@@ -961,12 +967,18 @@ class X402_Paywall_Public {
             return;
         }
 
+        $is_secure = is_ssl();
+
+        if (function_exists('wp_is_using_https') && wp_is_using_https()) {
+            $is_secure = true;
+        }
+
         $params = array(
             'expires' => time() - HOUR_IN_SECONDS,
             'path' => defined('COOKIEPATH') ? COOKIEPATH : '/',
-            'secure' => is_ssl(),
+            'secure' => $is_secure,
             'httponly' => true,
-            'samesite' => 'Lax',
+            'samesite' => 'Strict',
         );
 
         if (defined('COOKIE_DOMAIN') && COOKIE_DOMAIN) {
