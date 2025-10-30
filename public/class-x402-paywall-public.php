@@ -1186,6 +1186,7 @@ class X402_Paywall_Public {
         $decimals = isset($paywall_config['token_decimals']) ? (int) $paywall_config['token_decimals'] : (int) get_post_meta($post_id, '_x402_paywall_token_decimals', true);
 
         $amount_display = $this->format_atomic_amount($amount_atomic, $decimals);
+        $token_label = $this->get_token_display_label($post_id, $paywall_config);
         
         // Get excerpt or first 150 characters
         global $post;
@@ -1206,7 +1207,7 @@ class X402_Paywall_Public {
                 <div class="x402-paywall-details">
                     <div class="x402-paywall-price">
                         <span class="x402-paywall-amount"><?php echo esc_html($amount_display); ?></span>
-                        <span class="x402-paywall-currency">USDC</span>
+                        <span class="x402-paywall-currency"><?php echo esc_html($token_label); ?></span>
                     </div>
                     <div class="x402-paywall-network">
                         <?php 
@@ -1217,7 +1218,7 @@ class X402_Paywall_Public {
                         ?>
                     </div>
                 </div>
-                
+
                 <div class="x402-paywall-instructions">
                     <p><?php esc_html_e('To access this content:', 'x402-paywall'); ?></p>
                     <ol>
@@ -1239,6 +1240,45 @@ class X402_Paywall_Public {
         </div>
         <?php
         return ob_get_clean();
+    }
+
+    /**
+     * Get a human-readable token label for the paywall UI.
+     *
+     * @param int   $post_id        Post identifier.
+     * @param array $paywall_config Paywall configuration array.
+     * @return string
+     */
+    private function get_token_display_label($post_id, $paywall_config) {
+        if (!empty($paywall_config['token_name'])) {
+            return $paywall_config['token_name'];
+        }
+
+        $meta_token_name = get_post_meta($post_id, '_x402_paywall_token_name', true);
+        if (!empty($meta_token_name)) {
+            return $meta_token_name;
+        }
+
+        $network_type = $paywall_config['network_type'] ?? '';
+        $network = $paywall_config['network'] ?? '';
+        $token_address = $paywall_config['token_address'] ?? '';
+
+        $token_config = X402_Paywall_Token_Registry::get_token($network_type, $network, $token_address);
+        if (is_array($token_config)) {
+            if (!empty($token_config['name'])) {
+                return $token_config['name'];
+            }
+
+            if (!empty($token_config['token_name'])) {
+                return $token_config['token_name'];
+            }
+        }
+
+        if (!empty($token_address)) {
+            return $token_address;
+        }
+
+        return esc_html__('Payment Token', 'x402-paywall');
     }
 
     /**
