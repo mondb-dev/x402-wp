@@ -110,10 +110,39 @@ class X402_Paywall_DB {
             'facilitator_reference' => $payment_data['facilitator_reference'] ?? null,
         );
 
+        $format = array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
+
+        if (isset($payment_data['failure_status_code'])) {
+            $failure_status_code = (int) $payment_data['failure_status_code'];
+
+            if ($failure_status_code > 0) {
+                $data['failure_status_code'] = $failure_status_code;
+                $format[] = '%d';
+            }
+        }
+
+        if (isset($payment_data['facilitator_error_code'])) {
+            $facilitator_error_code = trim((string) $payment_data['facilitator_error_code']);
+
+            if ($facilitator_error_code !== '') {
+                $data['facilitator_error_code'] = $facilitator_error_code;
+                $format[] = '%s';
+            }
+        }
+
+        if (isset($payment_data['facilitator_message'])) {
+            $facilitator_message = trim((string) $payment_data['facilitator_message']);
+
+            if ($facilitator_message !== '') {
+                $data['facilitator_message'] = $facilitator_message;
+                $format[] = '%s';
+            }
+        }
+
         $result = $wpdb->insert(
             $table_name,
             $data,
-            array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+            $format
         );
 
         return $result ? $wpdb->insert_id : false;

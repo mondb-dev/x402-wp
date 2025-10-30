@@ -149,6 +149,9 @@ This document summarizes the implementation of the X402 Paywall WordPress plugin
 - `network` - Network identifier
 - `transaction_hash` - Blockchain transaction hash
 - `payment_status` - Status (pending, verified, failed)
+- `failure_status_code` - HTTP status returned for failed facilitator requests
+- `facilitator_error_code` - Error code returned by facilitator, if any
+- `facilitator_message` - Raw facilitator failure description
 - `created_at` - Timestamp
 
 ### Post Meta Keys

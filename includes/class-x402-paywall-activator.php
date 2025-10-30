@@ -59,6 +59,9 @@ class X402_Paywall_Activator {
             payment_status varchar(20) NOT NULL DEFAULT 'pending',
             facilitator_signature text DEFAULT NULL,
             facilitator_reference varchar(191) DEFAULT NULL,
+            failure_status_code smallint(5) DEFAULT NULL,
+            facilitator_error_code varchar(191) DEFAULT NULL,
+            facilitator_message text DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY post_id (post_id),
@@ -67,6 +70,8 @@ class X402_Paywall_Activator {
             KEY payer_identifier (payer_identifier),
             KEY payment_status (payment_status),
             KEY facilitator_reference (facilitator_reference),
+            KEY failure_status_code (failure_status_code),
+            KEY facilitator_error_code (facilitator_error_code),
             KEY created_at (created_at)
         ) $charset_collate;";
         

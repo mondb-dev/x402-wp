@@ -437,6 +437,10 @@ class X402_Paywall_Public {
             ? trim($error_details['facilitator_message'])
             : '';
 
+        if ($facilitator_message !== '') {
+            $facilitator_message = wp_strip_all_tags($facilitator_message);
+        }
+
         $raw_message = isset($error_details['message']) && is_string($error_details['message'])
             ? $error_details['message']
             : __('Unable to verify the payment with the facilitator.', 'x402-paywall');
@@ -474,6 +478,9 @@ class X402_Paywall_Public {
             'payment_status' => 'failed',
             'facilitator_signature' => null,
             'facilitator_reference' => $facilitator_reference,
+            'failure_status_code' => $status_code,
+            'facilitator_error_code' => $error_code,
+            'facilitator_message' => $facilitator_message,
         );
 
         $encoded_error = $this->encode_error_payload_for_storage($error_details, $status_code, $facilitator_message, $sanitized_message, $error_code);
