@@ -67,14 +67,24 @@ class X402_Paywall_Payment_Handler {
         if (!$this->handler) {
             return null;
         }
-        
+
         try {
             $post_url = get_permalink($post_id);
             $post_title = get_the_title($post_id);
-            
+
+            $amount_atomic = $this->normalize_atomic_amount(
+                $paywall_config['amount'] ?? '',
+                $paywall_config['token_decimals'] ?? 0
+            );
+
+            if ($amount_atomic === null) {
+                error_log('X402 Paywall: Invalid payment amount configuration for post ' . $post_id);
+                return null;
+            }
+
             $params = array(
                 'payTo' => $paywall_config['recipient_address'],
-                'amount' => $paywall_config['amount'],
+                'amount' => $amount_atomic,
                 'resource' => $post_url,
                 'description' => sprintf(__('Access to: %s', 'x402-paywall'), $post_title),
                 'asset' => $paywall_config['token_address'],
@@ -172,7 +182,108 @@ class X402_Paywall_Payment_Handler {
             );
         }
     }
-    
+
+    /**
+     * Normalize the configured amount into atomic units.
+     *
+     * @param string $amount   Configured amount (atomic or decimal string).
+     * @param int    $decimals Token decimals for conversion.
+     * @return string|null Normalized atomic amount or null when invalid.
+     */
+    private function normalize_atomic_amount($amount, $decimals) {
+        $amount_string = trim((string) $amount);
+
+        if ($amount_string === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d+$/', $amount_string)) {
+            return $this->sanitize_atomic_string($amount_string);
+        }
+
+        if (!preg_match('/^\d+(?:\.\d+)?$/', $amount_string)) {
+            return null;
+        }
+
+        $decimals = max(0, (int) $decimals);
+        $parts = explode('.', $amount_string, 2);
+        $integer_part = $parts[0];
+        $fractional_part = isset($parts[1]) ? $parts[1] : '';
+
+        if ($fractional_part !== '' && strlen($fractional_part) > $decimals) {
+            return null;
+        }
+
+        $multiplier = '1' . str_repeat('0', $decimals);
+
+        if (function_exists('bcmul')) {
+            $result = bcmul($amount_string, $multiplier, 0);
+            $normalized = $this->sanitize_atomic_string($result);
+
+            if ($normalized !== null) {
+                return $normalized;
+            }
+        }
+
+        if (class_exists('\\Decimal\\Decimal')) {
+            try {
+                $decimal_value = new \Decimal\Decimal($amount_string);
+                $multiplier_value = new \Decimal\Decimal($multiplier);
+                $result_decimal = $decimal_value->mul($multiplier_value);
+                $result_string = $result_decimal->toString();
+
+                if (stripos($result_string, 'e') === false) {
+                    $normalized = $this->sanitize_atomic_string($result_string);
+
+                    if ($normalized !== null) {
+                        return $normalized;
+                    }
+                }
+            } catch (\Throwable $exception) {
+                // Fall back to manual conversion below
+            }
+        }
+
+        return $this->manual_decimal_to_atomic($integer_part, $fractional_part, $decimals);
+    }
+
+    /**
+     * Convert decimal amount to atomic units without external extensions.
+     *
+     * @param string $integer_part    Integer portion of the amount.
+     * @param string $fractional_part Fractional portion of the amount.
+     * @param int    $decimals        Token decimals for conversion.
+     * @return string|null Atomic amount or null when invalid.
+     */
+    private function manual_decimal_to_atomic($integer_part, $fractional_part, $decimals) {
+        $fractional_part = str_pad($fractional_part, $decimals, '0', STR_PAD_RIGHT);
+        $atomic = $integer_part . $fractional_part;
+
+        return $this->sanitize_atomic_string($atomic);
+    }
+
+    /**
+     * Sanitize atomic amount strings ensuring they represent a positive integer.
+     *
+     * @param string $value Potential atomic amount string.
+     * @return string|null Sanitized atomic amount or null when invalid.
+     */
+    private function sanitize_atomic_string($value) {
+        $digits_only = preg_replace('/[^0-9]/', '', (string) $value);
+
+        if ($digits_only === '' || !preg_match('/[1-9]/', $digits_only)) {
+            return null;
+        }
+
+        $normalized = ltrim($digits_only, '0');
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        return $normalized;
+    }
+
     /**
      * Check if network is EVM-based
      *

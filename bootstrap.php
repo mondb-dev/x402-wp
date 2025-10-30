@@ -81,6 +81,25 @@ function x402_paywall_missing_dependencies_notice() {
 }
 
 /**
+ * Show admin notice if BCMath extension is missing
+ */
+function x402_paywall_missing_bcmath_notice() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    ?>
+    <div class="notice notice-error">
+        <p>
+            <strong><?php esc_html_e('X402 Paywall Warning:', 'x402-paywall'); ?></strong>
+            <?php esc_html_e('The BCMath PHP extension is not available. The plugin will use a fallback implementation for precise token amount calculations, but enabling BCMath is recommended.', 'x402-paywall'); ?>
+        </p>
+        <p><?php esc_html_e('Please enable the BCMath extension in your PHP configuration for optimal accuracy and performance.', 'x402-paywall'); ?></p>
+    </div>
+    <?php
+}
+
+/**
  * Show admin notice with instructions for first-time setup
  */
 function x402_paywall_setup_notice() {
@@ -174,6 +193,11 @@ if (!x402_paywall_load_dependencies()) {
     // Failed to load dependencies
     add_action('admin_notices', 'x402_paywall_missing_dependencies_notice');
     return;
+}
+
+// Warn if BCMath extension is unavailable
+if (!extension_loaded('bcmath')) {
+    add_action('admin_notices', 'x402_paywall_missing_bcmath_notice');
 }
 
 // Dependencies loaded successfully - show setup notice if needed
