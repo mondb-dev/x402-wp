@@ -93,6 +93,7 @@ class X402_Paywall_Meta_Boxes {
     public function init() {
         add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
         add_action('save_post', array($this, 'save_meta_box'));
+        add_action('admin_notices', array($this, 'display_admin_notices'));
     }
     
     /**
@@ -145,7 +146,36 @@ class X402_Paywall_Meta_Boxes {
         $network_type = get_post_meta($post->ID, '_x402_paywall_network_type', true) ?: 'evm';
         $network = get_post_meta($post->ID, '_x402_paywall_network', true) ?: 'base-mainnet';
         $token_address = get_post_meta($post->ID, '_x402_paywall_token_address', true);
-        $amount = get_post_meta($post->ID, '_x402_paywall_amount', true) ?: '1';
+        $amount_atomic = get_post_meta($post->ID, '_x402_paywall_amount', true);
+        $amount_format = get_post_meta($post->ID, '_x402_paywall_amount_format', true);
+        $token_decimals = get_post_meta($post->ID, '_x402_paywall_token_decimals', true);
+
+        if (!$token_decimals) {
+            $selected_token_config = $this->get_token_config($network_type, $network, $token_address);
+            if ($selected_token_config && isset($selected_token_config['decimals'])) {
+                $token_decimals = (int) $selected_token_config['decimals'];
+            }
+        }
+
+        if (!$token_decimals) {
+            $token_decimals = 6;
+        }
+
+        if ($amount_atomic !== '' && $amount_format !== 'atomic') {
+            $legacy_amount = $this->validate_and_convert_amount($amount_atomic, $token_decimals);
+            if (!is_wp_error($legacy_amount)) {
+                $amount_atomic = $legacy_amount;
+            }
+        }
+
+        $amount = $this->format_amount_for_display($amount_atomic, $token_decimals);
+
+        if ($amount === '') {
+            $amount = '1';
+        }
+
+        $step_value = $this->get_step_value($token_decimals);
+        $min_value = $step_value;
         
         ?>
         
@@ -209,9 +239,9 @@ class X402_Paywall_Meta_Boxes {
                         type="number" 
                         name="x402_paywall_amount" 
                         id="x402_paywall_amount" 
-                        value="<?php echo esc_attr($amount); ?>" 
-                        step="0.01" 
-                        min="0.01" 
+                        value="<?php echo esc_attr($amount); ?>"
+                        step="<?php echo esc_attr($step_value); ?>"
+                        min="<?php echo esc_attr($min_value); ?>"
                         style="width: 100%;"
                     />
                     <span class="description"><?php esc_html_e('Payment amount in selected token', 'x402-paywall'); ?></span>
@@ -243,6 +273,10 @@ class X402_Paywall_Meta_Boxes {
                 var network = $(this).val();
                 updateTokenOptions(networkType, network);
             });
+
+            $('#x402_paywall_token_address').on('change', function() {
+                updateAmountInputDecimals();
+            });
             
             function updateNetworkOptions(networkType) {
                 var $networkSelect = $('#x402_paywall_network');
@@ -258,14 +292,14 @@ class X402_Paywall_Meta_Boxes {
                     <?php endforeach; ?>
                 }
                 <?php endforeach; ?>
-                
+
                 $networkSelect.trigger('change');
             }
-            
+
             function updateTokenOptions(networkType, network) {
                 var $tokenSelect = $('#x402_paywall_token_address');
                 $tokenSelect.empty();
-                
+
                 <?php foreach ($this->tokens as $type => $networks): ?>
                 if (networkType === '<?php echo esc_js($type); ?>') {
                     <?php foreach ($networks as $net_key => $net_data): ?>
@@ -273,14 +307,40 @@ class X402_Paywall_Meta_Boxes {
                         <?php foreach ($net_data['tokens'] as $token_addr => $token_data): ?>
                         $tokenSelect.append($('<option>', {
                             value: '<?php echo esc_js($token_addr); ?>',
-                            text: '<?php echo esc_js($token_data['name']); ?>'
+                            text: '<?php echo esc_js($token_data['name']); ?>',
+                            'data-decimals': '<?php echo esc_js(isset($token_data['decimals']) ? (int) $token_data['decimals'] : 0); ?>'
                         }));
                         <?php endforeach; ?>
                     }
                     <?php endforeach; ?>
                 }
                 <?php endforeach; ?>
+
+                updateAmountInputDecimals();
             }
+
+            function updateAmountInputDecimals() {
+                var $tokenSelect = $('#x402_paywall_token_address');
+                var decimals = parseInt($tokenSelect.find('option:selected').data('decimals'), 10);
+
+                if (isNaN(decimals) || decimals < 0) {
+                    decimals = 6;
+                }
+
+                var step;
+
+                if (decimals === 0) {
+                    step = '1';
+                } else {
+                    step = '0.' + '0'.repeat(Math.max(0, decimals - 1)) + '1';
+                }
+
+                $('#x402_paywall_amount')
+                    .attr('step', step)
+                    .attr('min', step);
+            }
+
+            updateAmountInputDecimals();
         });
         </script>
         
@@ -318,10 +378,12 @@ class X402_Paywall_Meta_Boxes {
     private function render_token_options($network_type, $network, $selected_token) {
         if (isset($this->tokens[$network_type][$network]['tokens'])) {
             foreach ($this->tokens[$network_type][$network]['tokens'] as $token_addr => $token_data) {
+                $decimals = isset($token_data['decimals']) ? (int) $token_data['decimals'] : 0;
                 printf(
-                    '<option value="%s" %s>%s</option>',
+                    '<option value="%s" %s data-decimals="%d">%s</option>',
                     esc_attr($token_addr),
                     selected($selected_token, $token_addr, false),
+                    $decimals,
                     esc_html($token_data['name'])
                 );
             }
@@ -356,21 +418,55 @@ class X402_Paywall_Meta_Boxes {
         
         if ($enabled === '1') {
             // Save paywall configuration
-            $network_type = isset($_POST['x402_paywall_network_type']) ? sanitize_text_field($_POST['x402_paywall_network_type']) : 'evm';
-            $network = isset($_POST['x402_paywall_network']) ? sanitize_text_field($_POST['x402_paywall_network']) : '';
-            $token_address = isset($_POST['x402_paywall_token_address']) ? sanitize_text_field($_POST['x402_paywall_token_address']) : '';
-            $amount = isset($_POST['x402_paywall_amount']) ? floatval($_POST['x402_paywall_amount']) : 1.0;
-            
+            $network_type = isset($_POST['x402_paywall_network_type'])
+                ? sanitize_text_field(wp_unslash($_POST['x402_paywall_network_type']))
+                : 'evm';
+            $network = isset($_POST['x402_paywall_network'])
+                ? sanitize_text_field(wp_unslash($_POST['x402_paywall_network']))
+                : '';
+            $token_address = isset($_POST['x402_paywall_token_address'])
+                ? sanitize_text_field(wp_unslash($_POST['x402_paywall_token_address']))
+                : '';
+            $raw_amount = isset($_POST['x402_paywall_amount'])
+                ? sanitize_text_field(wp_unslash($_POST['x402_paywall_amount']))
+                : '';
+
+            $errors = array();
+
+            $token_meta = $this->get_token_config($network_type, $network, $token_address);
+            if (!$token_meta) {
+                $errors[] = esc_html__('The selected token is not recognized. Please select a valid token.', 'x402-paywall');
+            }
+
+            $token_decimals = $token_meta && isset($token_meta['decimals']) ? (int) $token_meta['decimals'] : 0;
+
+            $amount_atomic = null;
+            if (empty($errors)) {
+                $amount_validation = $this->validate_and_convert_amount($raw_amount, $token_decimals);
+
+                if (is_wp_error($amount_validation)) {
+                    $errors[] = $amount_validation->get_error_message();
+                } else {
+                    $amount_atomic = $amount_validation;
+                }
+            }
+
+            if (!empty($errors)) {
+                update_post_meta($post_id, '_x402_paywall_enabled', '0');
+                $this->store_admin_errors($errors);
+                return;
+            }
+
             update_post_meta($post_id, '_x402_paywall_network_type', $network_type);
             update_post_meta($post_id, '_x402_paywall_network', $network);
             update_post_meta($post_id, '_x402_paywall_token_address', $token_address);
-            update_post_meta($post_id, '_x402_paywall_amount', $amount);
-            
+            update_post_meta($post_id, '_x402_paywall_amount', $amount_atomic);
+            update_post_meta($post_id, '_x402_paywall_amount_format', 'atomic');
+
             // Store token metadata for later use
-            if (isset($this->tokens[$network_type][$network]['tokens'][$token_address])) {
-                $token_meta = $this->tokens[$network_type][$network]['tokens'][$token_address];
-                update_post_meta($post_id, '_x402_paywall_token_decimals', $token_meta['decimals']);
-                
+            if ($token_meta) {
+                update_post_meta($post_id, '_x402_paywall_token_decimals', $token_decimals);
+
                 if (isset($token_meta['token_name'])) {
                     update_post_meta($post_id, '_x402_paywall_token_name', $token_meta['token_name']);
                 }
@@ -394,5 +490,172 @@ class X402_Paywall_Meta_Boxes {
             return $this->tokens[$network_type][$network]['tokens'][$token_address];
         }
         return null;
+    }
+
+    /**
+     * Display admin error notices for paywall configuration.
+     */
+    public function display_admin_notices() {
+        if (!is_admin()) {
+            return;
+        }
+
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if (!$screen || strpos($screen->base, 'post') === false) {
+            return;
+        }
+
+        $messages = get_transient($this->get_error_transient_key());
+        if (empty($messages) || !is_array($messages)) {
+            return;
+        }
+
+        delete_transient($this->get_error_transient_key());
+
+        echo '<div class="notice notice-error is-dismissible">';
+        echo '<p>' . esc_html__('The X402 Paywall configuration could not be saved:', 'x402-paywall') . '</p>';
+        echo '<ul>';
+        foreach ($messages as $message) {
+            echo '<li>' . esc_html($message) . '</li>';
+        }
+        echo '</ul>';
+        echo '</div>';
+    }
+
+    /**
+     * Validate and convert human-readable amount to atomic units.
+     *
+     * @param string $amount_string Amount entered by the user.
+     * @param int    $decimals      Token decimals.
+     * @return string|WP_Error Atomic amount or error.
+     */
+    private function validate_and_convert_amount($amount_string, $decimals) {
+        $amount_string = trim($amount_string);
+
+        if ($amount_string === '') {
+            return new WP_Error('x402_paywall_amount_required', esc_html__('Please enter a payment amount.', 'x402-paywall'));
+        }
+
+        if (!preg_match('/^\d+(?:\.\d+)?$/', $amount_string)) {
+            return new WP_Error('x402_paywall_amount_invalid', esc_html__('The payment amount must be a numeric value.', 'x402-paywall'));
+        }
+
+        $parts = explode('.', $amount_string, 2);
+        $integer_part = $parts[0];
+        $fractional_part = isset($parts[1]) ? $parts[1] : '';
+
+        $decimals = max(0, (int) $decimals);
+
+        if ($fractional_part !== '' && strlen($fractional_part) > $decimals) {
+            return new WP_Error(
+                'x402_paywall_amount_precision',
+                sprintf(
+                    /* translators: %d: number of allowed decimal places */
+                    esc_html__('The selected token only supports %d decimal places.', 'x402-paywall'),
+                    $decimals
+                )
+            );
+        }
+
+        $has_integer_value = (bool) preg_match('/[1-9]/', $integer_part);
+        $has_fractional_value = $fractional_part !== '' && (bool) preg_match('/[1-9]/', $fractional_part);
+
+        if (!$has_integer_value && !$has_fractional_value) {
+            return new WP_Error('x402_paywall_amount_positive', esc_html__('The payment amount must be greater than zero.', 'x402-paywall'));
+        }
+
+        $fractional_part = str_pad($fractional_part, $decimals, '0', STR_PAD_RIGHT);
+        $atomic_amount = ltrim($integer_part . $fractional_part, '0');
+
+        if ($atomic_amount === '') {
+            $atomic_amount = '0';
+        }
+
+        if ($atomic_amount === '0') {
+            return new WP_Error('x402_paywall_amount_positive', esc_html__('The payment amount must be greater than zero.', 'x402-paywall'));
+        }
+
+        return $atomic_amount;
+    }
+
+    /**
+     * Format atomic amount for human display.
+     *
+     * @param string $amount_atomic Stored atomic amount.
+     * @param int    $decimals      Token decimals.
+     * @return string
+     */
+    private function format_amount_for_display($amount_atomic, $decimals) {
+        if ($amount_atomic === '' || $amount_atomic === null) {
+            return '';
+        }
+
+        $amount_atomic = preg_replace('/[^0-9]/', '', (string) $amount_atomic);
+
+        if ($amount_atomic === '') {
+            return '';
+        }
+
+        $decimals = max(0, (int) $decimals);
+
+        if ($decimals === 0) {
+            return $amount_atomic;
+        }
+
+        if (strlen($amount_atomic) <= $decimals) {
+            $amount_atomic = str_pad($amount_atomic, $decimals, '0', STR_PAD_LEFT);
+            $whole = '0';
+            $fraction = $amount_atomic;
+        } else {
+            $whole = substr($amount_atomic, 0, -$decimals);
+            $fraction = substr($amount_atomic, -$decimals);
+        }
+
+        $fraction = rtrim($fraction, '0');
+
+        if ($fraction === '') {
+            return ltrim($whole, '0') !== '' ? ltrim($whole, '0') : '0';
+        }
+
+        $whole = ltrim($whole, '0');
+        if ($whole === '') {
+            $whole = '0';
+        }
+
+        return $whole . '.' . $fraction;
+    }
+
+    /**
+     * Get numeric step value for input based on token decimals.
+     *
+     * @param int $decimals Token decimals.
+     * @return string
+     */
+    private function get_step_value($decimals) {
+        $decimals = max(0, (int) $decimals);
+
+        if ($decimals === 0) {
+            return '1';
+        }
+
+        return '0.' . str_repeat('0', max(0, $decimals - 1)) . '1';
+    }
+
+    /**
+     * Store error messages for later display in admin notices.
+     *
+     * @param array $messages Error messages.
+     */
+    private function store_admin_errors($messages) {
+        set_transient($this->get_error_transient_key(), $messages, MINUTE_IN_SECONDS);
+    }
+
+    /**
+     * Get transient key for admin errors.
+     *
+     * @return string
+     */
+    private function get_error_transient_key() {
+        return 'x402_paywall_errors_' . get_current_user_id();
     }
 }

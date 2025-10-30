@@ -1002,11 +1002,20 @@ class X402_Paywall_Public {
         $token_address = get_post_meta($post_id, '_x402_paywall_token_address', true);
         $amount = get_post_meta($post_id, '_x402_paywall_amount', true);
         $decimals = get_post_meta($post_id, '_x402_paywall_token_decimals', true);
-        
-        if (!$network || !$token_address || !$amount) {
+        $amount_format = get_post_meta($post_id, '_x402_paywall_amount_format', true);
+
+        $decimals = $decimals ? (int) $decimals : 6;
+
+        if ($amount_format === 'atomic') {
+            $amount_atomic = preg_replace('/[^0-9]/', '', (string) $amount);
+        } else {
+            $amount_atomic = $this->convert_decimal_to_atomic($amount, $decimals);
+        }
+
+        if (!$network || !$token_address || !$amount_atomic) {
             return null;
         }
-        
+
         // Get author's payment address
         $author_id = get_post_field('post_author', $post_id);
         $profile = X402_Paywall_DB::get_user_profile($author_id);
@@ -1021,16 +1030,13 @@ class X402_Paywall_Public {
             return null;
         }
         
-        // Convert amount to atomic units
-        $decimals = $decimals ?: 6;
-        $amount_atomic = bcmul($amount, bcpow('10', (string)$decimals));
-        
         $config = array(
             'recipient_address' => $recipient_address,
             'amount' => $amount_atomic,
             'token_address' => $token_address,
             'network' => $network,
             'network_type' => $network_type,
+            'token_decimals' => $decimals,
         );
         
         // Add EVM-specific fields
@@ -1050,9 +1056,12 @@ class X402_Paywall_Public {
      * @return string Paywall HTML
      */
     private function render_paywall_message($post_id, $paywall_config) {
-        $amount = get_post_meta($post_id, '_x402_paywall_amount', true);
+        $amount_atomic = $paywall_config['amount'];
         $network_type = $paywall_config['network_type'];
         $network = $paywall_config['network'];
+        $decimals = isset($paywall_config['token_decimals']) ? (int) $paywall_config['token_decimals'] : (int) get_post_meta($post_id, '_x402_paywall_token_decimals', true);
+
+        $amount_display = $this->format_atomic_amount($amount_atomic, $decimals);
         
         // Get excerpt or first 150 characters
         global $post;
@@ -1072,7 +1081,7 @@ class X402_Paywall_Public {
                 
                 <div class="x402-paywall-details">
                     <div class="x402-paywall-price">
-                        <span class="x402-paywall-amount"><?php echo esc_html($amount); ?></span>
+                        <span class="x402-paywall-amount"><?php echo esc_html($amount_display); ?></span>
                         <span class="x402-paywall-currency">USDC</span>
                     </div>
                     <div class="x402-paywall-network">
@@ -1106,5 +1115,97 @@ class X402_Paywall_Public {
         </div>
         <?php
         return ob_get_clean();
+    }
+
+    /**
+     * Convert a decimal string amount to atomic units.
+     *
+     * @param string $amount_string Human-readable amount.
+     * @param int    $decimals      Token decimals.
+     * @return string|null Atomic amount or null on failure.
+     */
+    private function convert_decimal_to_atomic($amount_string, $decimals) {
+        $amount_string = trim((string) $amount_string);
+
+        if ($amount_string === '') {
+            return null;
+        }
+
+        if (!preg_match('/^\d+(?:\.\d+)?$/', $amount_string)) {
+            return null;
+        }
+
+        $parts = explode('.', $amount_string, 2);
+        $integer_part = $parts[0];
+        $fractional_part = isset($parts[1]) ? $parts[1] : '';
+
+        $decimals = max(0, (int) $decimals);
+
+        if ($fractional_part !== '' && strlen($fractional_part) > $decimals) {
+            return null;
+        }
+
+        $has_integer_value = (bool) preg_match('/[1-9]/', $integer_part);
+        $has_fractional_value = $fractional_part !== '' && (bool) preg_match('/[1-9]/', $fractional_part);
+
+        if (!$has_integer_value && !$has_fractional_value) {
+            return null;
+        }
+
+        $fractional_part = str_pad($fractional_part, $decimals, '0', STR_PAD_RIGHT);
+        $atomic = ltrim($integer_part . $fractional_part, '0');
+
+        if ($atomic === '') {
+            $atomic = '0';
+        }
+
+        if ($atomic === '0') {
+            return null;
+        }
+
+        return $atomic;
+    }
+
+    /**
+     * Format an atomic token amount for human-readable display.
+     *
+     * @param string $amount_atomic Amount in atomic units.
+     * @param int    $decimals      Token decimals.
+     * @return string
+     */
+    private function format_atomic_amount($amount_atomic, $decimals) {
+        $amount_atomic = preg_replace('/[^0-9]/', '', (string) $amount_atomic);
+
+        if ($amount_atomic === '') {
+            return '0';
+        }
+
+        $decimals = max(0, (int) $decimals);
+
+        if ($decimals === 0) {
+            return ltrim($amount_atomic, '0') !== '' ? ltrim($amount_atomic, '0') : '0';
+        }
+
+        if (strlen($amount_atomic) <= $decimals) {
+            $amount_atomic = str_pad($amount_atomic, $decimals, '0', STR_PAD_LEFT);
+            $whole = '0';
+            $fraction = $amount_atomic;
+        } else {
+            $whole = substr($amount_atomic, 0, -$decimals);
+            $fraction = substr($amount_atomic, -$decimals);
+        }
+
+        $fraction = rtrim($fraction, '0');
+
+        if ($fraction === '') {
+            return ltrim($whole, '0') !== '' ? ltrim($whole, '0') : '0';
+        }
+
+        $whole = ltrim($whole, '0');
+        if ($whole === '') {
+            $whole = '0';
+        }
+
+        return $whole . '.' . $fraction;
     }
 }
