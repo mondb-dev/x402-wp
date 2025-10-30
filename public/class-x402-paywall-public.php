@@ -10,10 +10,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use X402\Types\ExactPaymentPayload;
+use X402\Types\PaymentPayload;
+
 /**
  * Public class
  */
 class X402_Paywall_Public {
+
+    private const SESSION_TTL = 1800;
+    private const SESSION_HEADER = 'X-Payment-Session';
     
     /**
      * Payment handler instance
@@ -21,6 +27,13 @@ class X402_Paywall_Public {
      * @var X402_Paywall_Payment_Handler
      */
     private $payment_handler;
+
+    /**
+     * Whether the current request has a verified payment
+     *
+     * @var bool
+     */
+    private $payment_verified = false;
     
     /**
      * Constructor
@@ -35,7 +48,8 @@ class X402_Paywall_Public {
     public function init() {
         add_filter('the_content', array($this, 'filter_content'), 10);
         add_action('wp_enqueue_scripts', array($this, 'enqueue_public_assets'));
-        add_action('template_redirect', array($this, 'handle_payment_request'));
+        add_action('template_redirect', array($this, 'handle_payment_request'), 10);
+        add_action('template_redirect', array($this, 'enforce_paywall_access'), 20);
     }
     
     /**
@@ -214,57 +228,61 @@ class X402_Paywall_Public {
      * @param array $paywall_config Paywall configuration
      */
     private function process_payment_request($post_id, $paywall_config) {
-        // Create payment requirements
         $requirements = $this->payment_handler->create_payment_requirements($post_id, $paywall_config);
-        
+
         if (!$requirements) {
             return;
         }
-        
-        // Process payment
+
         $result = $this->payment_handler->process_payment($requirements);
-        
-        if ($result['verified']) {
-            // Payment verified!
-            $transaction_hash = null;
-            if ($result['settlement'] && isset($result['settlement']['transaction'])) {
-                $transaction_hash = $result['settlement']['transaction'];
-            }
-            
-            // Get user address from payment
-            $user_address = $this->extract_user_address_from_payment();
-            
-            // Log successful payment
-            X402_Paywall_DB::log_payment(array(
-                'post_id' => $post_id,
-                'user_address' => $user_address,
-                'amount' => $paywall_config['amount'],
-                'token_address' => $paywall_config['token_address'],
-                'network' => $paywall_config['network'],
-                'transaction_hash' => $transaction_hash,
-                'payment_status' => 'verified',
-            ));
-            
-            // Set cookie to remember payment for this session
-            setcookie('x402_paid_' . $post_id, '1', time() + (86400 * 30), '/');
-            
-            // Redirect back to the post
-            wp_redirect(get_permalink($post_id));
-            exit;
+
+        if (!$result['verified']) {
+            return;
         }
+
+        $settlement = is_array($result['settlement']) ? $result['settlement'] : null;
+
+        if (!$settlement || !$this->confirm_payment_response_signature($settlement)) {
+            error_log('X402 Paywall: Settlement proof missing or failed signature confirmation for post ' . $post_id);
+            return;
+        }
+
+        $payer_identifier = $this->extract_payer_identifier_from_result($result);
+
+        if (!$payer_identifier) {
+            error_log('X402 Paywall: Unable to determine payer identifier for post ' . $post_id);
+            return;
+        }
+
+        $transaction_hash = $settlement['transaction'] ?? null;
+        $normalized_proof = $this->normalize_settlement_proof($settlement);
+        $session_header = $this->store_verified_session($post_id, $payer_identifier, $normalized_proof);
+
+        X402_Paywall_DB::log_payment(array(
+            'post_id' => $post_id,
+            'user_address' => $payer_identifier,
+            'payer_identifier' => $payer_identifier,
+            'amount' => $paywall_config['amount'],
+            'token_address' => $paywall_config['token_address'],
+            'network' => $paywall_config['network'],
+            'transaction_hash' => $transaction_hash,
+            'settlement_proof' => $normalized_proof,
+            'payment_status' => 'verified',
+        ));
+
+        $this->payment_verified = true;
+
+        $response_header = $this->payment_handler->create_payment_response_header($settlement);
+        header($this->payment_handler->get_payment_response_header_name() . ': ' . $response_header);
+
+        if ($session_header) {
+            header(self::SESSION_HEADER . ': ' . $session_header);
+        }
+
+        wp_safe_redirect(get_permalink($post_id));
+        exit;
     }
-    
-    /**
-     * Extract user address from payment header
-     *
-     * @return string User address
-     */
-    private function extract_user_address_from_payment() {
-        // This would extract from the actual payment payload
-        // For now, return a placeholder
-        return 'unknown';
-    }
-    
+
     /**
      * Check if payment has been made for this post
      *
@@ -272,14 +290,388 @@ class X402_Paywall_Public {
      * @return bool Payment status
      */
     private function check_payment_status($post_id) {
-        // Check cookie first
-        if (isset($_COOKIE['x402_paid_' . $post_id]) && $_COOKIE['x402_paid_' . $post_id] === '1') {
+        $session = $this->get_active_session($post_id);
+
+        if (!$session) {
+            return false;
+        }
+
+        $payer = $session['data']['payer'] ?? '';
+
+        if ($payer && X402_Paywall_DB::has_user_paid($post_id, $payer)) {
+            $this->refresh_session_state($post_id, $session);
+            $this->payment_verified = true;
             return true;
         }
-        
-        // Could also check database if we have user address
-        // For now, rely on cookie
+
+        if ($payer && !empty($session['data']['proof'])) {
+            $this->refresh_session_state($post_id, $session);
+            $this->payment_verified = true;
+            return true;
+        }
+
         return false;
+    }
+
+    /**
+     * Enforce the paywall before rendering content
+     */
+    public function enforce_paywall_access() {
+        if (!is_singular(array('post', 'page'))) {
+            return;
+        }
+
+        global $post;
+
+        if (!$post) {
+            return;
+        }
+
+        $enabled = get_post_meta($post->ID, '_x402_paywall_enabled', true);
+
+        if ($enabled !== '1') {
+            return;
+        }
+
+        if (current_user_can('edit_post', $post->ID)) {
+            return;
+        }
+
+        $paywall_config = $this->get_paywall_config($post->ID);
+
+        if (!$paywall_config) {
+            return;
+        }
+
+        if ($this->payment_verified || $this->check_payment_status($post->ID)) {
+            return;
+        }
+
+        if ($this->is_payment_info_request()) {
+            $this->send_payment_required_response($post->ID, $paywall_config);
+        }
+
+        status_header(402);
+        nocache_headers();
+
+        $message = $this->render_paywall_message($post->ID, $paywall_config);
+
+        wp_die($message, esc_html__('Payment Required', 'x402-paywall'), array('response' => 402));
+    }
+
+    /**
+     * Confirm the facilitator response signature exists before trusting settlement data
+     *
+     * @param array $settlement Settlement payload
+     * @return bool
+     */
+    private function confirm_payment_response_signature($settlement) {
+        $proof = $this->get_settlement_proof_array($settlement);
+
+        if (!$proof) {
+            return false;
+        }
+
+        $signature = null;
+
+        if (isset($proof['signature']) && is_string($proof['signature'])) {
+            $signature = $proof['signature'];
+        } elseif (isset($proof['signedMessage']['signature']) && is_string($proof['signedMessage']['signature'])) {
+            $signature = $proof['signedMessage']['signature'];
+        }
+
+        if (!$signature || !is_string($signature) || trim($signature) === '') {
+            return false;
+        }
+
+        $payload = null;
+
+        if (isset($proof['payload'])) {
+            $payload = $proof['payload'];
+        } elseif (isset($proof['signedMessage']['payload'])) {
+            $payload = $proof['signedMessage']['payload'];
+        }
+
+        if ($payload === null || $payload === '') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Extract payer identifier from facilitator result
+     *
+     * @param array $result Payment handler result
+     * @return string|null
+     */
+    private function extract_payer_identifier_from_result($result) {
+        if (isset($result['settlement']['payer']) && !empty($result['settlement']['payer'])) {
+            return strtolower($result['settlement']['payer']);
+        }
+
+        if (isset($result['payload']) && $result['payload'] instanceof PaymentPayload) {
+            $payload = $result['payload']->payload;
+
+            if ($payload instanceof ExactPaymentPayload && isset($payload->authorization->from)) {
+                return strtolower($payload->authorization->from);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalize settlement proof for persistence
+     *
+     * @param array $settlement Settlement payload
+     * @return string
+     */
+    private function normalize_settlement_proof($settlement) {
+        $proof = $this->get_settlement_proof_array($settlement);
+
+        $encoded = wp_json_encode($proof ? $proof : $settlement);
+
+        if ($encoded === false) {
+            $encoded = json_encode($proof ? $proof : $settlement);
+        }
+
+        return $encoded ?: '';
+    }
+
+    /**
+     * Get settlement proof array from facilitator response
+     *
+     * @param array $settlement Settlement payload
+     * @return array|null
+     */
+    private function get_settlement_proof_array($settlement) {
+        if (isset($settlement['proof'])) {
+            if (is_array($settlement['proof'])) {
+                return $settlement['proof'];
+            }
+
+            if (is_string($settlement['proof'])) {
+                $decoded = json_decode($settlement['proof'], true);
+
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+        }
+
+        if (isset($settlement['settlement_proof']) && is_array($settlement['settlement_proof'])) {
+            return $settlement['settlement_proof'];
+        }
+
+        return is_array($settlement) ? $settlement : null;
+    }
+
+    /**
+     * Store verified session information
+     *
+     * @param int $post_id Post ID
+     * @param string $payer_identifier Normalized payer address
+     * @param string|null $normalized_proof Settlement proof JSON
+     * @return string Session header value
+     */
+    private function store_verified_session($post_id, $payer_identifier, $normalized_proof = null) {
+        $this->clear_legacy_cookie($post_id);
+
+        $token = wp_generate_uuid4();
+        $signature = $this->sign_session_token($token, $post_id, $payer_identifier);
+        $transient_key = $this->build_session_transient_key($post_id, $token);
+
+        $payload = array(
+            'post_id' => $post_id,
+            'payer' => strtolower($payer_identifier),
+            'signature' => $signature,
+            'proof' => $normalized_proof,
+            'created_at' => time(),
+        );
+
+        set_transient($transient_key, $payload, self::SESSION_TTL);
+
+        $this->set_session_cookie($post_id, $token, $signature);
+
+        return $token . '.' . $signature;
+    }
+
+    /**
+     * Refresh session expiration and cookie state
+     *
+     * @param int $post_id Post ID
+     * @param array $session Session payload
+     */
+    private function refresh_session_state($post_id, $session) {
+        if (!isset($session['transient_key'], $session['token'], $session['signature'])) {
+            return;
+        }
+
+        set_transient($session['transient_key'], $session['data'], self::SESSION_TTL);
+        $this->set_session_cookie($post_id, $session['token'], $session['signature']);
+    }
+
+    /**
+     * Retrieve active session from request
+     *
+     * @param int $post_id Post ID
+     * @return array|null
+     */
+    private function get_active_session($post_id) {
+        $session = $this->parse_session_from_request($post_id);
+
+        if (!$session) {
+            $this->clear_legacy_cookie($post_id);
+        }
+
+        return $session;
+    }
+
+    /**
+     * Parse session token from cookie or header
+     *
+     * @param int $post_id Post ID
+     * @return array|null
+     */
+    private function parse_session_from_request($post_id) {
+        $session_value = null;
+        $cookie_name = $this->get_session_cookie_name($post_id);
+
+        if (isset($_COOKIE[$cookie_name])) {
+            $session_value = $_COOKIE[$cookie_name];
+        }
+
+        if (!$session_value && isset($_SERVER['HTTP_X_PAYMENT_SESSION'])) {
+            $session_value = $_SERVER['HTTP_X_PAYMENT_SESSION'];
+        }
+
+        if (!$session_value || !is_string($session_value)) {
+            return null;
+        }
+
+        $parts = explode('.', $session_value, 2);
+
+        if (count($parts) !== 2) {
+            return null;
+        }
+
+        list($token, $signature) = $parts;
+
+        if ($token === '' || $signature === '') {
+            return null;
+        }
+
+        $transient_key = $this->build_session_transient_key($post_id, $token);
+        $data = get_transient($transient_key);
+
+        if (!is_array($data) || !isset($data['signature']) || !hash_equals($data['signature'], $signature)) {
+            return null;
+        }
+
+        $expected_signature = $this->sign_session_token($token, $post_id, $data['payer'] ?? '');
+
+        if (!hash_equals($expected_signature, $signature)) {
+            return null;
+        }
+
+        return array(
+            'token' => $token,
+            'signature' => $signature,
+            'data' => $data,
+            'transient_key' => $transient_key,
+        );
+    }
+
+    /**
+     * Sign a session token for integrity
+     *
+     * @param string $token Session token
+     * @param int $post_id Post ID
+     * @param string $payer_identifier Payer address
+     * @return string
+     */
+    private function sign_session_token($token, $post_id, $payer_identifier) {
+        $payer = strtolower((string)$payer_identifier);
+
+        return hash_hmac('sha256', $token . '|' . $post_id . '|' . $payer, wp_salt('auth'));
+    }
+
+    /**
+     * Build the transient key for storing session data
+     *
+     * @param int $post_id Post ID
+     * @param string $token Session token
+     * @return string
+     */
+    private function build_session_transient_key($post_id, $token) {
+        return 'x402_paywall_session_' . md5($post_id . '|' . $token);
+    }
+
+    /**
+     * Persist secure cookie for session token
+     *
+     * @param int $post_id Post ID
+     * @param string $token Session token
+     * @param string $signature Signature
+     */
+    private function set_session_cookie($post_id, $token, $signature) {
+        $cookie_name = $this->get_session_cookie_name($post_id);
+        $value = $token . '.' . $signature;
+
+        $params = array(
+            'expires' => time() + self::SESSION_TTL,
+            'path' => defined('COOKIEPATH') ? COOKIEPATH : '/',
+            'secure' => is_ssl(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        );
+
+        if (defined('COOKIE_DOMAIN') && COOKIE_DOMAIN) {
+            $params['domain'] = COOKIE_DOMAIN;
+        }
+
+        setcookie($cookie_name, $value, $params);
+        $_COOKIE[$cookie_name] = $value;
+    }
+
+    /**
+     * Get the session cookie name for a post
+     *
+     * @param int $post_id Post ID
+     * @return string
+     */
+    private function get_session_cookie_name($post_id) {
+        return 'x402_paywall_session_' . $post_id;
+    }
+
+    /**
+     * Clear legacy cookie usage
+     *
+     * @param int $post_id Post ID
+     */
+    private function clear_legacy_cookie($post_id) {
+        $legacy_name = 'x402_paid_' . $post_id;
+
+        if (!isset($_COOKIE[$legacy_name])) {
+            return;
+        }
+
+        $params = array(
+            'expires' => time() - HOUR_IN_SECONDS,
+            'path' => defined('COOKIEPATH') ? COOKIEPATH : '/',
+            'secure' => is_ssl(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        );
+
+        if (defined('COOKIE_DOMAIN') && COOKIE_DOMAIN) {
+            $params['domain'] = COOKIE_DOMAIN;
+        }
+
+        setcookie($legacy_name, '', $params);
+
+        unset($_COOKIE[$legacy_name]);
     }
     
     /**
