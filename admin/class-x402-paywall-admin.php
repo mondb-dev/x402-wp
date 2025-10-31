@@ -21,6 +21,7 @@ class X402_Paywall_Admin {
     public function init() {
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
         add_action('admin_menu', array($this, 'add_admin_menu'));
+        add_action('wp_ajax_x402_detect_token', array($this, 'ajax_detect_token'));
     }
     
     /**
@@ -100,5 +101,51 @@ class X402_Paywall_Admin {
             </div>
         </div>
         <?php
+    }
+    
+    /**
+     * AJAX handler for token detection
+     */
+    public function ajax_detect_token() {
+        // Verify nonce
+        check_ajax_referer('x402_detect_token', 'nonce');
+        
+        // Check user capabilities
+        if (!current_user_can('edit_posts')) {
+            wp_send_json_error(array(
+                'message' => __('You do not have permission to perform this action.', 'x402-paywall')
+            ));
+        }
+        
+        // Get parameters
+        $contract_address = isset($_POST['contract_address']) ? sanitize_text_field($_POST['contract_address']) : '';
+        $network = isset($_POST['network']) ? sanitize_text_field($_POST['network']) : '';
+        
+        if (empty($contract_address)) {
+            wp_send_json_error(array(
+                'message' => __('Contract address is required.', 'x402-paywall')
+            ));
+        }
+        
+        if (empty($network)) {
+            wp_send_json_error(array(
+                'message' => __('Network is required.', 'x402-paywall')
+            ));
+        }
+        
+        // Get token detector instance
+        $detector = X402_Paywall_Token_Detector::get_instance();
+        
+        // Detect token
+        $token_info = $detector->detect_token($contract_address, $network);
+        
+        if (is_wp_error($token_info)) {
+            wp_send_json_error(array(
+                'message' => $token_info->get_error_message()
+            ));
+        }
+        
+        // Return success with token data
+        wp_send_json_success($token_info);
     }
 }

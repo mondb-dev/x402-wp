@@ -89,6 +89,13 @@ class X402_Paywall_Meta_Boxes {
         $amount_atomic = get_post_meta($post->ID, '_x402_paywall_amount', true);
         $amount_format = get_post_meta($post->ID, '_x402_paywall_amount_format', true);
         $token_decimals = get_post_meta($post->ID, '_x402_paywall_token_decimals', true);
+        
+        // Check if this is a custom token
+        $custom_token_address = get_post_meta($post->ID, '_x402_custom_token_address', true);
+        $custom_token_name = get_post_meta($post->ID, '_x402_custom_token_name', true);
+        $custom_token_symbol = get_post_meta($post->ID, '_x402_custom_token_symbol', true);
+        $custom_token_decimals = get_post_meta($post->ID, '_x402_custom_token_decimals', true);
+        $is_custom_token = !empty($custom_token_address);
 
         if (!$token_decimals) {
             $selected_token_config = $this->get_token_config($network_type, $network, $token_address);
@@ -167,9 +174,57 @@ class X402_Paywall_Meta_Boxes {
                         <strong><?php esc_html_e('Token', 'x402-paywall'); ?></strong>
                     </label>
                     <select name="x402_paywall_token_address" id="x402_paywall_token_address" style="width: 100%;">
-                        <?php $this->render_token_options($network_type, $network, $token_address); ?>
+                        <?php $this->render_token_options($network_type, $network, $is_custom_token ? '' : $token_address); ?>
+                        <option value="custom" <?php selected($is_custom_token, true); ?>>
+                            <?php esc_html_e('Custom Token (Enter Contract Address)', 'x402-paywall'); ?>
+                        </option>
                     </select>
                 </p>
+                
+                <div id="x402_custom_token_section" style="<?php echo $is_custom_token ? '' : 'display: none;'; ?>">
+                    <p>
+                        <label for="x402_custom_token_address">
+                            <strong><?php esc_html_e('Contract Address', 'x402-paywall'); ?></strong>
+                        </label>
+                        <input 
+                            type="text" 
+                            name="x402_custom_token_address" 
+                            id="x402_custom_token_address" 
+                            value="<?php echo esc_attr($custom_token_address); ?>"
+                            placeholder="<?php esc_attr_e('Paste token contract address or mint address', 'x402-paywall'); ?>"
+                            style="width: 100%;"
+                        />
+                        <button 
+                            type="button" 
+                            id="x402_detect_token_btn" 
+                            class="button"
+                            style="margin-top: 5px; width: 100%;"
+                        >
+                            <?php esc_html_e('Auto-Detect Token Info', 'x402-paywall'); ?>
+                        </button>
+                    </p>
+                    
+                    <div id="x402_token_detection_status" style="margin-top: 10px;"></div>
+                    
+                    <div id="x402_detected_token_info" style="<?php echo $is_custom_token ? '' : 'display: none;'; ?> margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 3px;">
+                        <p style="margin: 0 0 8px 0;"><strong><?php esc_html_e('Detected Token:', 'x402-paywall'); ?></strong></p>
+                        <p style="margin: 0 0 5px 0;">
+                            <strong><?php esc_html_e('Name:', 'x402-paywall'); ?></strong> 
+                            <span id="x402_detected_name"><?php echo esc_html($custom_token_name ?: '-'); ?></span>
+                        </p>
+                        <p style="margin: 0 0 5px 0;">
+                            <strong><?php esc_html_e('Symbol:', 'x402-paywall'); ?></strong> 
+                            <span id="x402_detected_symbol"><?php echo esc_html($custom_token_symbol ?: '-'); ?></span>
+                        </p>
+                        <p style="margin: 0;">
+                            <strong><?php esc_html_e('Decimals:', 'x402-paywall'); ?></strong> 
+                            <span id="x402_detected_decimals"><?php echo esc_html($custom_token_decimals ?: '-'); ?></span>
+                        </p>
+                        <input type="hidden" name="x402_custom_token_name" id="x402_custom_token_name" value="<?php echo esc_attr($custom_token_name); ?>" />
+                        <input type="hidden" name="x402_custom_token_symbol" id="x402_custom_token_symbol" value="<?php echo esc_attr($custom_token_symbol); ?>" />
+                        <input type="hidden" name="x402_custom_token_decimals" id="x402_custom_token_decimals" value="<?php echo esc_attr($custom_token_decimals); ?>" />
+                    </div>
+                </div>
                 
                 <p>
                     <label for="x402_paywall_amount">
@@ -215,7 +270,83 @@ class X402_Paywall_Meta_Boxes {
             });
 
             $('#x402_paywall_token_address').on('change', function() {
+                if ($(this).val() === 'custom') {
+                    $('#x402_custom_token_section').slideDown();
+                } else {
+                    $('#x402_custom_token_section').slideUp();
+                }
                 updateAmountInputDecimals();
+            });
+            
+            // Show custom token section if custom was previously selected
+            if ($('#x402_paywall_token_address').val() === 'custom') {
+                $('#x402_custom_token_section').show();
+            }
+            
+            // Handle auto-detect button click
+            $('#x402_detect_token_btn').on('click', function() {
+                var $btn = $(this);
+                var $status = $('#x402_token_detection_status');
+                var $info = $('#x402_detected_token_info');
+                var contractAddress = $('#x402_custom_token_address').val().trim();
+                var network = $('#x402_paywall_network').val();
+                
+                if (!contractAddress) {
+                    $status.html('<p style="color: #d63638; margin: 0;"><?php esc_html_e('Please enter a contract address.', 'x402-paywall'); ?></p>');
+                    return;
+                }
+                
+                // Disable button and show loading
+                $btn.prop('disabled', true).text('<?php esc_html_e('Detecting...', 'x402-paywall'); ?>');
+                $status.html('<p style="color: #646970; margin: 0;"><?php esc_html_e('Fetching token information from blockchain...', 'x402-paywall'); ?></p>');
+                $info.hide();
+                
+                // AJAX request to detect token
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'x402_detect_token',
+                        nonce: '<?php echo esc_js(wp_create_nonce('x402_detect_token')); ?>',
+                        contract_address: contractAddress,
+                        network: network
+                    },
+                    success: function(response) {
+                        if (response.success && response.data) {
+                            var tokenData = response.data;
+                            
+                            // Update detected token info display
+                            $('#x402_detected_name').text(tokenData.name);
+                            $('#x402_detected_symbol').text(tokenData.symbol);
+                            $('#x402_detected_decimals').text(tokenData.decimals);
+                            
+                            // Update hidden fields
+                            $('#x402_custom_token_name').val(tokenData.name);
+                            $('#x402_custom_token_symbol').val(tokenData.symbol);
+                            $('#x402_custom_token_decimals').val(tokenData.decimals);
+                            
+                            // Update amount input decimals
+                            var decimals = parseInt(tokenData.decimals, 10);
+                            var step = decimals === 0 ? '1' : '0.' + '0'.repeat(Math.max(0, decimals - 1)) + '1';
+                            $('#x402_paywall_amount').attr('step', step).attr('min', step);
+                            
+                            // Show success message
+                            $status.html('<p style="color: #00a32a; margin: 0;"><?php esc_html_e('Token detected successfully!', 'x402-paywall'); ?></p>');
+                            $info.slideDown();
+                        } else {
+                            var errorMsg = response.data && response.data.message 
+                                ? response.data.message 
+                                : '<?php esc_html_e('Failed to detect token. Please verify the contract address and network.', 'x402-paywall'); ?>';
+                            $status.html('<p style="color: #d63638; margin: 0;">' + errorMsg + '</p>');
+                        }
+                    },
+                    error: function() {
+                        $status.html('<p style="color: #d63638; margin: 0;"><?php esc_html_e('Request failed. Please try again.', 'x402-paywall'); ?></p>');
+                    },
+                    complete: function() {
+                        $btn.prop('disabled', false).text('<?php esc_html_e('Auto-Detect Token Info', 'x402-paywall'); ?>');
+                    }
+                });
             });
             
             function updateNetworkOptions(networkType) {
@@ -373,9 +504,47 @@ class X402_Paywall_Meta_Boxes {
 
             $errors = array();
 
-            $token_meta = $this->get_token_config($network_type, $network, $token_address);
-            if (!$token_meta) {
-                $errors[] = esc_html__('The selected token is not recognized. Please select a valid token.', 'x402-paywall');
+            // Handle custom token
+            if ($token_address === 'custom') {
+                $custom_address = isset($_POST['x402_custom_token_address'])
+                    ? sanitize_text_field(wp_unslash($_POST['x402_custom_token_address']))
+                    : '';
+                $custom_name = isset($_POST['x402_custom_token_name'])
+                    ? sanitize_text_field(wp_unslash($_POST['x402_custom_token_name']))
+                    : '';
+                $custom_symbol = isset($_POST['x402_custom_token_symbol'])
+                    ? sanitize_text_field(wp_unslash($_POST['x402_custom_token_symbol']))
+                    : '';
+                $custom_decimals = isset($_POST['x402_custom_token_decimals'])
+                    ? absint($_POST['x402_custom_token_decimals'])
+                    : 0;
+                
+                if (empty($custom_address)) {
+                    $errors[] = esc_html__('Please enter a contract address for the custom token.', 'x402-paywall');
+                } elseif (empty($custom_name) || empty($custom_symbol)) {
+                    $errors[] = esc_html__('Please click "Auto-Detect Token Info" to fetch token details.', 'x402-paywall');
+                } else {
+                    // Use custom token address and create token meta
+                    $token_address = $custom_address;
+                    $token_meta = array(
+                        'name' => $custom_name . ' (' . $custom_symbol . ')',
+                        'token_name' => $custom_name,
+                        'symbol' => $custom_symbol,
+                        'decimals' => $custom_decimals
+                    );
+                    
+                    // Save custom token to post meta for future reference
+                    update_post_meta($post_id, '_x402_custom_token_address', $custom_address);
+                    update_post_meta($post_id, '_x402_custom_token_name', $custom_name);
+                    update_post_meta($post_id, '_x402_custom_token_symbol', $custom_symbol);
+                    update_post_meta($post_id, '_x402_custom_token_decimals', $custom_decimals);
+                }
+            } else {
+                // Use registered token from registry
+                $token_meta = $this->get_token_config($network_type, $network, $token_address);
+                if (!$token_meta) {
+                    $errors[] = esc_html__('The selected token is not recognized. Please select a valid token.', 'x402-paywall');
+                }
             }
 
             $token_decimals = $token_meta && isset($token_meta['decimals']) ? (int) $token_meta['decimals'] : 0;

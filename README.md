@@ -6,6 +6,7 @@ A WordPress plugin that implements the [x402 payment protocol](https://github.co
 
 - 🔒 **Easy Paywall Setup**: Add paywalls to any post or page with a few clicks
 - 💰 **Multi-Chain Support**: Accept payments on EVM (Ethereum, Base, Optimism, Arbitrum, Polygon) and Solana networks
+- 🪙 **Auto-Token Detection**: Simply paste any ERC-20 or SPL token contract address - the plugin automatically fetches token name, symbol, and decimals from the blockchain
 - 👤 **User Payment Profiles**: Authors and editors can configure their payment addresses
 - ⚙️ **Flexible Configuration**: Customize payment amounts and choose from supported tokens
 - 🔐 **Secure**: Implements WordPress security best practices with nonces, sanitization, and validation
@@ -26,13 +27,21 @@ A WordPress plugin that implements the [x402 payment protocol](https://github.co
    git clone https://github.com/mondb-dev/x402-wp.git x402-paywall
    ```
 
-2. **Install dependencies** using Composer:
+2. **Install X402 PHP library and dependencies** using Composer:
    ```bash
    cd x402-paywall
    composer install
    ```
+   
+   Or use the provided installation script:
+   ```bash
+   chmod +x install-x402.sh
+   ./install-x402.sh
+   ```
 
 3. **Activate the plugin** through the WordPress admin panel
+
+**Note**: The plugin requires the official [mondb-dev/x402-php](https://github.com/mondb-dev/x402-php) library for X402 protocol operations. See [X402_INTEGRATION.md](X402_INTEGRATION.md) for detailed integration documentation.
 
 ## Quick Start
 
@@ -52,9 +61,28 @@ A WordPress plugin that implements the [x402 payment protocol](https://github.co
 4. Configure:
    - **Network Type**: Choose EVM or Solana
    - **Network**: Select specific network (e.g., Base Mainnet, Solana Mainnet)
-   - **Token**: Choose payment token (e.g., USDC)
+   - **Token**: Choose payment token (e.g., USDC) or select "Custom Token"
    - **Amount**: Set payment amount in the selected token
 5. Publish or update the post
+
+#### Using Custom Tokens (NEW!)
+
+You can now accept payments in **any ERC-20 or SPL token** by simply pasting the contract address:
+
+1. In the Token dropdown, select **"Custom Token (Enter Contract Address)"**
+2. Paste the token's contract address (ERC-20) or mint address (SPL)
+3. Click **"Auto-Detect Token Info"**
+4. The plugin will automatically fetch:
+   - Token Name
+   - Token Symbol
+   - Token Decimals
+5. Set your payment amount and publish
+
+**Example Token Addresses:**
+- USDC on Base: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+- USDC on Solana: `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`
+
+See [TOKEN_DETECTION_GUIDE.md](TOKEN_DETECTION_GUIDE.md) for detailed documentation.
 
 ### 3. Plugin Settings
 
@@ -67,13 +95,14 @@ Configure global settings at **Settings → X402 Paywall**:
 ## Supported Networks & Tokens
 
 ### EVM Networks
-- **Base Mainnet** & Sepolia (Testnet) - USDC
-- **Ethereum Mainnet** & Sepolia (Testnet) - USDC
+- **Base Mainnet** & Sepolia (Testnet) - USDC + Any ERC-20 token
+- **Ethereum Mainnet** & Sepolia (Testnet) - USDC + Any ERC-20 token
+- **Polygon**, **Arbitrum**, **Optimism** - Any ERC-20 token
 
 ### Solana Networks
-- **Solana Mainnet** & Devnet (Testnet) - USDC
+- **Solana Mainnet** & Devnet (Testnet) - USDC + Any SPL token
 
-Additional networks and tokens can be added by extending the configuration in `admin/class-x402-paywall-meta-boxes.php`.
+**Custom Token Support:** The plugin now supports **any ERC-20 or SPL token** through automatic token detection. Simply paste the contract address and the plugin will fetch token metadata from the blockchain.
 
 ## How It Works
 

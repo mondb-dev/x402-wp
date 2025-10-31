@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release of X402 Paywall plugin
 - Support for EVM networks (Ethereum, Base, Optimism, Arbitrum, Polygon)
 - Support for Solana (SVM) network
+- **Token Auto-Detection**: Automatically fetch token metadata from any ERC-20 or SPL token contract address
+- **Custom Token Support**: Accept payments in any ERC-20 or SPL token, not just pre-configured tokens
 - User profile payment address configuration
-- Post/page paywall meta boxes
+- Post/page paywall meta boxes with custom token UI
 - Custom paywall amounts and token selection
 - Global plugin settings page
 - Payment verification via x402 facilitator
@@ -22,20 +24,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Public-facing paywall display
 - Security features (nonces, sanitization, validation)
 - Database tables for user profiles and payment logs
+- Comprehensive handler classes for security, hooks, templates, protocol, finance, and REST API
+- Template loader system with theme override support
+- 40+ extensibility hooks for customization
+- Financial audit trail with high-precision calculations (18 decimals)
+- REST API endpoints for payment operations
+- SPL token handler for Solana-specific operations
+- Token detector with blockchain RPC integration
 - Uninstall cleanup script
-- Installation documentation
+- Extensive documentation (Installation, Quick Start, Hooks Reference, Audit Implementation, Theme Developer Guide, Token Detection Guide)
 - Contributing guidelines
 - Apache 2.0 license
 
 ### Supported Networks (Mainnet)
-- Base Mainnet - USDC
-- Ethereum Mainnet - USDC
-- Solana Mainnet - USDC
+- Base Mainnet - USDC + Any ERC-20 token
+- Ethereum Mainnet - USDC + Any ERC-20 token
+- Polygon Mainnet - Any ERC-20 token
+- Arbitrum One - Any ERC-20 token
+- Optimism Mainnet - Any ERC-20 token
+- Solana Mainnet - USDC + Any SPL token
 
 ### Supported Networks (Testnet)
-- Base Sepolia - USDC
-- Ethereum Sepolia - USDC
-- Solana Devnet - USDC
+- Base Sepolia - USDC + Any ERC-20 token
+- Ethereum Sepolia - USDC + Any ERC-20 token
+- Solana Devnet - USDC + Any SPL token
 
 ### Security
 - All user inputs validated and sanitized

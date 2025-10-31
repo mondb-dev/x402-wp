@@ -77,6 +77,38 @@ class X402_Paywall_Activator {
         
         dbDelta($sql);
         
+        // Create financial audit trail table
+        $table_name = $wpdb->prefix . 'x402_financial_audit';
+        
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id varchar(36) NOT NULL,
+            timestamp datetime NOT NULL,
+            post_id bigint(20) NOT NULL,
+            user_id bigint(20) NOT NULL,
+            user_address varchar(200) NOT NULL,
+            recipient_address varchar(200) NOT NULL,
+            amount decimal(65,18) NOT NULL,
+            token_address varchar(100) NOT NULL,
+            network varchar(50) NOT NULL,
+            transaction_hash varchar(100) DEFAULT NULL,
+            status varchar(20) NOT NULL DEFAULT 'pending',
+            ip_address varchar(45) NOT NULL,
+            user_agent text NOT NULL,
+            metadata longtext DEFAULT NULL,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY post_id (post_id),
+            KEY user_id (user_id),
+            KEY user_address (user_address),
+            KEY recipient_address (recipient_address),
+            KEY transaction_hash (transaction_hash),
+            KEY status (status),
+            KEY timestamp (timestamp),
+            KEY network (network)
+        ) $charset_collate;";
+        
+        dbDelta($sql);
+        
         // Set default options
         $default_options = array(
             'facilitator_url' => 'https://facilitator.x402.org',

@@ -52,6 +52,7 @@ class X402_Paywall_Payment_Handler {
             );
         } catch (Exception $e) {
             error_log('X402 Paywall: Failed to initialize payment handler - ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
             $this->handler = null;
         }
     }
@@ -118,6 +119,7 @@ class X402_Paywall_Payment_Handler {
             );
         } catch (Exception $e) {
             error_log('X402 Paywall: Failed to create payment requirements - ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
             return null;
         }
     }
@@ -138,8 +140,8 @@ class X402_Paywall_Payment_Handler {
         }
 
         try {
-            // Convert $_SERVER to array if needed
-            $server_data = $_SERVER;
+            // Sanitize server data before passing to x402-php
+            $server_data = $this->sanitize_server_data($_SERVER);
 
             $result = $this->handler->processPayment($server_data, $requirements);
 
@@ -169,6 +171,7 @@ class X402_Paywall_Payment_Handler {
             return $result;
         } catch (PaymentRequiredException $e) {
             error_log('X402 Paywall: Payment required - ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
 
             $status_code = $this->extract_status_code_from_exception($e, 402);
             $facilitator_message = $this->extract_facilitator_message_from_exception($e);
@@ -181,6 +184,7 @@ class X402_Paywall_Payment_Handler {
             );
         } catch (ValidationException $e) {
             error_log('X402 Paywall: Validation error - ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
 
             return $this->create_error_result(
                 $e->getMessage(),
@@ -189,6 +193,7 @@ class X402_Paywall_Payment_Handler {
             );
         } catch (FacilitatorException $e) {
             error_log('X402 Paywall: Facilitator error - ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
 
             $status_code = $this->extract_status_code_from_exception($e, 502);
 
@@ -200,6 +205,7 @@ class X402_Paywall_Payment_Handler {
             );
         } catch (Exception $e) {
             error_log('X402 Paywall: Unexpected error - ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
 
             return $this->create_error_result(
                 $e->getMessage(),
@@ -296,7 +302,7 @@ class X402_Paywall_Payment_Handler {
             $response = $this->handler->createPaymentRequiredResponse($requirements);
             return array(
                 'headers' => $response->getHeaders(),
-                'body' => json_decode(json_encode($response), true),
+                'body' => $this->response_to_array($response),
             );
         } catch (Exception $e) {
             error_log('X402 Paywall: Failed to create payment required response - ' . $e->getMessage());
@@ -408,6 +414,96 @@ class X402_Paywall_Payment_Handler {
         return $normalized;
     }
 
+    /**
+     * Convert x402-php response object to array
+     *
+     * @param object $response Response object from x402-php
+     * @return array Response as array
+     */
+    private function response_to_array($response) {
+        // Check if x402-php provides a toArray() method
+        if (method_exists($response, 'toArray')) {
+            return $response->toArray();
+        }
+        
+        // Fallback: use reflection to access public properties
+        if (is_object($response)) {
+            $array = array();
+            $reflection = new ReflectionObject($response);
+            
+            foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+                $property->setAccessible(true);
+                $value = $property->getValue($response);
+                
+                // Recursively convert nested objects
+                if (is_object($value)) {
+                    $array[$property->getName()] = $this->response_to_array($value);
+                } else {
+                    $array[$property->getName()] = $value;
+                }
+            }
+            
+            return $array;
+        }
+        
+        // Last resort: use json encoding (inefficient but works)
+        return json_decode(json_encode($response), true);
+    }
+    
+    /**
+     * Sanitize server data before passing to x402-php
+     *
+     * @param array $server_data Raw $_SERVER data
+     * @return array Sanitized server data
+     */
+    private function sanitize_server_data($server_data) {
+        $sanitized = array();
+        
+        // Only pass specific headers needed for payment processing
+        $allowed_keys = array(
+            'HTTP_X_PAYMENT',
+            'HTTP_HOST',
+            'HTTP_USER_AGENT',
+            'HTTP_ACCEPT',
+            'HTTP_REFERER',
+            'REQUEST_METHOD',
+            'REQUEST_URI',
+            'SERVER_PROTOCOL',
+            'REMOTE_ADDR',
+            'REQUEST_TIME',
+        );
+        
+        foreach ($allowed_keys as $key) {
+            if (isset($server_data[$key])) {
+                // Sanitize each value appropriately
+                $sanitized[$key] = $this->sanitize_server_value($key, $server_data[$key]);
+            }
+        }
+        
+        return $sanitized;
+    }
+    
+    /**
+     * Sanitize individual server value
+     *
+     * @param string $key Server data key
+     * @param mixed $value Server data value
+     * @return mixed Sanitized value
+     */
+    private function sanitize_server_value($key, $value) {
+        // For HTTP headers, preserve the raw value but ensure it's a string
+        if (strpos($key, 'HTTP_') === 0) {
+            return is_string($value) ? $value : '';
+        }
+        
+        // For other values, apply text sanitization
+        if (is_string($value)) {
+            return sanitize_text_field($value);
+        }
+        
+        return $value;
+    }
+    
     /**
      * Check if network is EVM-based
      *

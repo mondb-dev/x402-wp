@@ -21,17 +21,14 @@ function x402_paywall_check_dependencies() {
         return false;
     }
     
-    // Check for x402-php source files
-    $x402_facilitator = X402_PAYWALL_PLUGIN_DIR . 'vendor/x402-php/src/Facilitator/FacilitatorClient.php';
-    if (!file_exists($x402_facilitator)) {
-        return false;
-    }
-    
-    // Check for Guzzle (from Composer)
+    // Check for Composer autoload (which includes x402-php from GitHub)
     $composer_autoload = X402_PAYWALL_PLUGIN_DIR . 'vendor/autoload.php';
     if (!file_exists($composer_autoload)) {
         return false;
     }
+    
+    // After loading, check if x402-php classes are available
+    // (This will be done after autoload is loaded)
     
     return true;
 }
