@@ -19,6 +19,12 @@ This document summarizes the comprehensive audit and implementation of industry 
 
 ---
 
+## 0. External Dependency Reality Check
+
+While the plugin advertises comprehensive native handlers, it fundamentally depends on the [`mondb-dev/x402-php`](https://github.com/mondb-dev/x402-php) library that is pulled in via Composer from `bootstrap.php` and the dedicated client wrapper in `includes/class-x402-paywall-x402-client.php`. The bootstrapper exits early with an admin notice when Composer assets (including the x402 library) are missing, and the client wrapper instantiates the facilitator classes supplied by that dependency. However, configuration drift remains: the wrapper looks for options such as `x402_default_network` and `x402_api_endpoint` that are never written by the current settings UI (`admin/class-x402-paywall-settings.php` persists `x402_paywall_*` options), so the embedded x402-php client silently falls back to defaults. Future remediation should align the stored options with the wrapper’s expectations or adapt the wrapper to consume the settings that administrators actually manage.
+
+---
+
 ## 1. Security Implementation
 
 ### New Security Handler Class
