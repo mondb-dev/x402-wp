@@ -23,6 +23,13 @@ class X402_Paywall_X402_Client {
      * @var mixed
      */
     private $client = null;
+
+    /**
+     * Cached configuration used for client initialization
+     *
+     * @var array
+     */
+    private $config = array();
     
     /**
      * Library available flag
@@ -46,6 +53,7 @@ class X402_Paywall_X402_Client {
      */
     private function __construct() {
         $this->load_library();
+        $this->config = $this->build_client_config();
         $this->init_client();
     }
     
@@ -80,14 +88,7 @@ class X402_Paywall_X402_Client {
         }
         
         try {
-            $config = array(
-                'network' => get_option('x402_default_network', 'mainnet'),
-                'api_endpoint' => get_option('x402_api_endpoint', ''),
-                'timeout' => 30,
-                'verify_ssl' => true,
-            );
-            
-            $config = apply_filters('x402_client_config', $config);
+            $config = $this->config;
             
             // Try to instantiate based on available classes
             if (class_exists('\X402\Client')) {
@@ -114,7 +115,46 @@ class X402_Paywall_X402_Client {
             }
         }
     }
-    
+
+    /**
+     * Build configuration array from stored options
+     *
+     * @return array
+     */
+    private function build_client_config() {
+        $facilitator_url = get_option('x402_paywall_facilitator_url', 'https://facilitator.x402.org');
+        $auto_settle = get_option('x402_paywall_auto_settle', '1') === '1';
+        $valid_before_buffer_option = get_option('x402_paywall_valid_before_buffer', 6);
+        $valid_before_buffer = function_exists('absint')
+            ? absint($valid_before_buffer_option)
+            : (int) $valid_before_buffer_option;
+        $enable_evm = get_option('x402_paywall_enable_evm', '1') === '1';
+        $enable_spl = get_option('x402_paywall_enable_spl', '1') === '1';
+
+        $config = array(
+            'network' => 'mainnet',
+            'api_endpoint' => $facilitator_url,
+            'facilitator_url' => $facilitator_url,
+            'auto_settle' => $auto_settle,
+            'valid_before_buffer' => $valid_before_buffer,
+            'enable_evm' => $enable_evm,
+            'enable_spl' => $enable_spl,
+            'timeout' => 30,
+            'verify_ssl' => true,
+        );
+
+        return apply_filters('x402_client_config', $config);
+    }
+
+    /**
+     * Get configuration array used to initialize the client
+     *
+     * @return array
+     */
+    public function get_config() {
+        return $this->config;
+    }
+
     /**
      * Check if library is available
      *
