@@ -260,3 +260,166 @@
         font-size: 24px;
     }
 }
+
+/* Loading States & Animations */
+.x402-loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999999;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.x402-loading-spinner {
+    text-align: center;
+    color: #ffffff;
+    padding: 40px;
+}
+
+.x402-spinner {
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    margin: 0 auto 20px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.x402-loading-spinner p {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 10px 0;
+}
+
+.x402-loading-spinner small {
+    font-size: 14px;
+    opacity: 0.8;
+    display: block;
+}
+
+/* Success Animation */
+.x402-success-animation {
+    text-align: center;
+    color: #ffffff;
+    padding: 40px;
+}
+
+.x402-checkmark {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 20px;
+}
+
+.x402-checkmark-circle {
+    stroke: #4CAF50;
+    stroke-width: 2;
+    stroke-dasharray: 166;
+    stroke-dashoffset: 166;
+    animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+    fill: none;
+}
+
+.x402-checkmark-check {
+    stroke: #4CAF50;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 48;
+    stroke-dashoffset: 48;
+    animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.6s forwards;
+    fill: none;
+}
+
+@keyframes stroke {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+.x402-success-animation p {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+}
+
+/* Progress Indicator */
+.x402-payment-progress {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f0f7ff;
+    border: 1px solid #3498db;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.x402-payment-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.x402-payment-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3498db, #2ecc71);
+    animation: progressPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
+
+/* Mobile Loading Adjustments */
+@media screen and (max-width: 480px) {
+    .x402-loading-spinner,
+    .x402-success-animation {
+        padding: 30px 20px;
+    }
+    
+    .x402-spinner {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .x402-checkmark {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .x402-loading-spinner p {
+        font-size: 16px;
+    }
+    
+    .x402-loading-spinner small {
+        font-size: 13px;
+    }
+}

@@ -142,6 +142,9 @@ class X402_Paywall_Payment_Handler {
         try {
             // Sanitize server data before passing to x402-php
             $server_data = $this->sanitize_server_data($_SERVER);
+            
+            // Check for replay attacks before processing
+            $this->check_replay_attack($server_data);
 
             $result = $this->handler->processPayment($server_data, $requirements);
 
@@ -502,6 +505,69 @@ class X402_Paywall_Payment_Handler {
         }
         
         return $value;
+    }
+    
+    /**
+     * Check for replay attacks by verifying transaction hasn't been processed
+     *
+     * @param array $server_data Sanitized server data
+     * @throws ValidationException If replay attack detected
+     */
+    private function check_replay_attack($server_data) {
+        global $wpdb;
+        
+        // Extract payment header if present
+        $payment_header = $server_data['HTTP_X_PAYMENT'] ?? null;
+        if (!$payment_header) {
+            return; // No payment to check yet
+        }
+        
+        // Decode payment payload
+        try {
+            $payload = json_decode(base64_decode($payment_header), true);
+            if (!$payload || !isset($payload['transaction'])) {
+                return; // Invalid payload format
+            }
+            
+            $tx_hash = $payload['transaction'];
+            $network = $payload['network'] ?? '';
+            
+            // Check if transaction already processed successfully
+            $table = $wpdb->prefix . 'x402_payment_logs';
+            $existing = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$table} WHERE tx_hash = %s AND network = %s AND status = 'verified'",
+                $tx_hash,
+                $network
+            ));
+            
+            if ($existing > 0) {
+                throw new ValidationException(
+                    __('Transaction has already been processed. Possible replay attack detected.', 'x402-paywall')
+                );
+            }
+            
+            // Optional: Check transaction age (reject if > 24 hours old)
+            if (isset($payload['timestamp'])) {
+                $tx_timestamp = intval($payload['timestamp']);
+                $age = time() - $tx_timestamp;
+                $max_age = apply_filters('x402_paywall_max_transaction_age', 86400); // 24 hours default
+                
+                if ($age > $max_age) {
+                    throw new ValidationException(
+                        sprintf(
+                            __('Transaction is too old (%d hours). Maximum age is %d hours.', 'x402-paywall'),
+                            round($age / 3600),
+                            round($max_age / 3600)
+                        )
+                    );
+                }
+            }
+        } catch (ValidationException $e) {
+            throw $e; // Re-throw validation exceptions
+        } catch (Exception $e) {
+            error_log('X402 Paywall: Replay check error - ' . $e->getMessage());
+            // Don't block payment if replay check fails, just log
+        }
     }
     
     /**
