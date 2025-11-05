@@ -11,12 +11,8 @@
 
 .x402-paywall-preview {
     position: relative;
-    max-height: 200px;
-    overflow: hidden;
-    margin-bottom: 30px;
-    padding: 20px;
-    background: #f9f9f9;
-    border-radius: 8px;
+    margin-bottom: 40px;
+    padding-bottom: 60px;
 }
 
 .x402-paywall-preview::after {
@@ -25,8 +21,40 @@
     bottom: 0;
     left: 0;
     right: 0;
-    height: 100px;
-    background: linear-gradient(to bottom, rgba(249, 249, 249, 0), rgba(249, 249, 249, 1));
+    height: 120px;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, 1));
+    pointer-events: none;
+}
+
+/* Preserve media in preview */
+.x402-paywall-preview iframe,
+.x402-paywall-preview video,
+.x402-paywall-preview img,
+.x402-paywall-preview embed,
+.x402-paywall-preview object {
+    max-width: 100%;
+    height: auto;
+    margin: 1em 0;
+    position: relative;
+    z-index: 1;
+}
+
+/* Responsive video embeds */
+.x402-paywall-preview iframe[src*="youtube"],
+.x402-paywall-preview iframe[src*="vimeo"],
+.x402-paywall-preview iframe[src*="dailymotion"] {
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    height: auto;
+}
+
+/* Preview ellipsis */
+.x402-preview-more {
+    font-size: 1.2em;
+    color: #666;
+    margin: 0.5em 0;
+    position: relative;
+    z-index: 2;
 }
 
 .x402-paywall-message {

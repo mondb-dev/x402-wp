@@ -5,6 +5,72 @@ All notable changes to the X402 Paywall WordPress plugin will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-01-XX
+
+### Added
+- **Content Preview System**: Authors can now show a teaser before the paywall with 5 options (no preview, 100/250/500 words, or custom <!--more--> tag)
+- **Smart HTML Trimming**: Preview extraction preserves embeds, iframes, videos, images, and HTML structure
+- **Media Preservation**: YouTube/Vimeo embeds and other rich media are kept intact in previews
+- **Preview Fade Effect**: CSS gradient overlay creates smooth transition from preview to paywall
+- **Configurable Access Duration**: Authors can now set how long users can access content after payment (1 day to permanent)
+- **Persistent Replay Attack Prevention**: Implemented `NonceTrackerInterface` from x402-php library for database-backed nonce tracking
+- **WordPress Nonce Tracker**: New `X402_Paywall_Replay_Prevention` class with transient caching for performance
+- **Cron Job Management**: New `X402_Paywall_Cron` class for automated daily cleanup of old payment logs
+- **Library Version Check**: Bootstrap now verifies x402-php library has `NonceTrackerInterface` support
+- **Access Expiry Column**: Added `expires_at` datetime column to `wp_x402_payment_logs` table
+- **Expiry Calculation Helper**: New `X402_Paywall_DB::calculate_access_expiry()` method
+- Test script `test-nonce-tracker.php` for verifying integration
+- Migration script `migrate-add-expires-at.php` for upgrading existing installations
+- Comprehensive documentation in `ACCESS_DURATION_GUIDE.md`
+
+### Changed
+- **Content Filtering**: `filter_content()` now calls `render_content_with_paywall()` to show preview before paywall
+- **X402 Client Integration**: Updated to pass `NonceTrackerInterface` to PaymentHandler constructor
+- **Initialization Order**: Replay prevention now loads before X402 client initialization
+- **Composer Dependencies**: Updated x402-php to dev-main (includes NonceTrackerInterface)
+- **Payment Verification**: `has_user_paid()` now checks expiry date: `(expires_at IS NULL OR expires_at > NOW())`
+- **Meta Box UI**: Added "Access Duration" and "Preview Length" dropdowns in post editor (defaults: 1 year, no preview)
+- **Payment Logging**: `log_payment()` now accepts and stores `expires_at` field
+- Plugin activation now fires `x402_paywall_activated` action and runs initial cleanup
+- Plugin deactivation now fires `x402_paywall_deactivated` action
+- **CSS Enhancements**: Updated `.x402-paywall-preview` styles to support responsive embeds and gradient fade
+
+### Security
+- Transaction hashes now tracked in database to prevent replay attacks across server restarts
+- Atomic check-and-set operations prevent race conditions in payment verification
+- Automatic cleanup removes failed attempts older than 7 days and pending payments older than 24 hours
+- Nonce format: `network:txHash` prevents cross-chain replay attacks
+- Access expiry enforced at database level for secure time-based access control
+
+### Technical
+- Implemented 5 NonceTrackerInterface methods: `hasNonce()`, `isNonceUsed()`, `markUsed()`, `markNonceUsed()`, `remove()`
+- Added 5-minute transient caching for nonce lookups (reduces database load)
+- Maintained backward compatibility with legacy `isProcessed()` and `markProcessed()` methods
+- Cron job runs daily at midnight to clean up old entries
+- Added statistics tracking via `get_statistics()` method
+- Database index on `expires_at` for optimal query performance
+- Stored as `_x402_paywall_access_duration` post meta with validation
+
+### Backward Compatibility
+- **Default behavior maintained**: 1-year access duration (same as before)
+- **Existing payments preserved**: All existing payments have `expires_at = NULL` (permanent access)
+- **No data loss**: Migration handled automatically via activator's `dbDelta()`
+- **Cookie behavior unchanged**: Client-side cookies still expire after 1 year
+
+### Access Duration Options
+- 1 Day (`1_day`)
+- 1 Week (`1_week`)
+- 1 Month (`1_month`)
+- 3 Months (`3_months`)
+- 6 Months (`6_months`)
+- **1 Year (`1_year`)** - Default, maintains current behavior
+- Permanent (`permanent`) - Lifetime access, never expires
+
+### Documentation
+- Created `X402_LIBRARY_INTEGRATION_V1.1.md` with comprehensive implementation details
+- Created `ACCESS_DURATION_GUIDE.md` with usage examples and migration guide
+- Updated integration test suite with NonceTracker verification
+
 ## [1.0.0] - 2025-10-29
 
 ### Added

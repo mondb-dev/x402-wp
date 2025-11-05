@@ -34,6 +34,38 @@ function x402_paywall_check_dependencies() {
 }
 
 /**
+ * Check if x402-php library is up to date
+ */
+function x402_paywall_check_library_version() {
+    // Check if the required interface exists (NonceTrackerInterface for replay prevention)
+    if (!interface_exists('X402\Nonce\NonceTrackerInterface')) {
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * Show admin notice if library is outdated
+ */
+function x402_paywall_outdated_library_notice() {
+    ?>
+    <div class="notice notice-warning">
+        <p>
+            <strong><?php esc_html_e('X402 Paywall Warning:', 'x402-paywall'); ?></strong>
+            <?php esc_html_e('The x402-php library needs to be updated to include NonceTrackerInterface.', 'x402-paywall'); ?>
+        </p>
+        <p>
+            <?php esc_html_e('To update, run this command in the plugin directory:', 'x402-paywall'); ?>
+        </p>
+        <p>
+            <code>composer update mondb-dev/x402-php --no-dev</code>
+        </p>
+    </div>
+    <?php
+}
+
+/**
  * Load dependencies
  */
 function x402_paywall_load_dependencies() {
@@ -190,6 +222,11 @@ if (!x402_paywall_load_dependencies()) {
     // Failed to load dependencies
     add_action('admin_notices', 'x402_paywall_missing_dependencies_notice');
     return;
+}
+
+// Check if library is up to date
+if (!x402_paywall_check_library_version()) {
+    add_action('admin_notices', 'x402_paywall_outdated_library_notice');
 }
 
 // Warn if BCMath extension is unavailable

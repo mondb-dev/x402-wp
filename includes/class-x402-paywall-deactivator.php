@@ -22,7 +22,7 @@ class X402_Paywall_Deactivator {
         // Flush rewrite rules
         flush_rewrite_rules();
         
-        // Clear any scheduled cron jobs if we add them later
-        wp_clear_scheduled_hook('x402_paywall_cleanup');
+        // Fire deactivation hook for cron and other handlers
+        do_action('x402_paywall_deactivated');
     }
 }

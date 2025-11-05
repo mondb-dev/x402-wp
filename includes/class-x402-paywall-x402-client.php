@@ -45,6 +45,13 @@ class X402_Paywall_X402_Client {
     private $payment_handler = null;
 
     /**
+     * Replay prevention handler
+     *
+     * @var X402_Paywall_Replay_Prevention|null
+     */
+    private $replay_prevention = null;
+
+    /**
      * Cached configuration used for client initialization
      *
      * @var array
@@ -76,7 +83,15 @@ class X402_Paywall_X402_Client {
     private function __construct() {
         $this->load_library();
         $this->config = $this->build_client_config();
+        $this->init_replay_prevention();
         $this->init_client();
+    }
+    
+    /**
+     * Initialize replay prevention
+     */
+    private function init_replay_prevention() {
+        $this->replay_prevention = X402_Paywall_Replay_Prevention::get_instance();
     }
     
     /**
@@ -115,11 +130,12 @@ class X402_Paywall_X402_Client {
             // Initialize FacilitatorClient
             $this->facilitator_client = new FacilitatorClient($facilitator_url);
             
-            // Initialize PaymentHandler with facilitator
+            // Initialize PaymentHandler with facilitator and nonce tracker
             $this->payment_handler = new PaymentHandler(
                 facilitator: $this->facilitator_client,
                 autoSettle: $auto_settle,
-                validBeforeBufferSeconds: $buffer_seconds
+                validBeforeBufferSeconds: $buffer_seconds,
+                nonceTracker: $this->replay_prevention
             );
             
             do_action('x402_client_initialized', $this->facilitator_client, $this->payment_handler);
@@ -304,6 +320,37 @@ class X402_Paywall_X402_Client {
             error_log('X402 Get Network Details Error: ' . $e->getMessage());
             return null;
         }
+    }
+    
+    /**
+     * Get replay prevention instance
+     *
+     * @return X402_Paywall_Replay_Prevention|null
+     */
+    public function get_replay_prevention() {
+        return $this->replay_prevention;
+    }
+    
+    /**
+     * Run replay prevention cleanup
+     *
+     * @return array Cleanup results
+     */
+    public function run_cleanup() {
+        if (!$this->replay_prevention) {
+            return array(
+                'success' => false,
+                'message' => 'Replay prevention not initialized'
+            );
+        }
+        
+        $this->replay_prevention->cleanup();
+        
+        return array(
+            'success' => true,
+            'message' => 'Cleanup completed',
+            'statistics' => $this->replay_prevention->get_statistics()
+        );
     }
     
     /**

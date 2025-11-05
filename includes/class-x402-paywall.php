@@ -78,11 +78,19 @@ class X402_Paywall {
      * Run the plugin
      */
     public function run() {
-        // Initialize X402 client wrapper first
+        // Initialize security first
+        X402_Paywall_Security::get_instance();
+        
+        // Initialize replay prevention before X402 client
+        X402_Paywall_Replay_Prevention::get_instance();
+        
+        // Initialize X402 client wrapper (depends on replay prevention)
         X402_Paywall_X402_Client::get_instance();
         
+        // Initialize cron handler for cleanup
+        X402_Paywall_Cron::get_instance();
+        
         // Initialize core handlers (singletons)
-        X402_Paywall_Security::get_instance();
         X402_Paywall_Hooks::get_instance();
         X402_Paywall_Template_Loader::get_instance();
         X402_Paywall_Protocol::get_instance();

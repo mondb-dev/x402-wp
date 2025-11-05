@@ -62,6 +62,7 @@ class X402_Paywall_Activator {
             failure_status_code smallint(5) DEFAULT NULL,
             facilitator_error_code varchar(191) DEFAULT NULL,
             facilitator_message text DEFAULT NULL,
+            expires_at datetime DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY post_id (post_id),
@@ -72,6 +73,7 @@ class X402_Paywall_Activator {
             KEY facilitator_reference (facilitator_reference),
             KEY failure_status_code (failure_status_code),
             KEY facilitator_error_code (facilitator_error_code),
+            KEY expires_at (expires_at),
             KEY created_at (created_at)
         ) $charset_collate;";
         
@@ -129,5 +131,16 @@ class X402_Paywall_Activator {
         
         // Flush rewrite rules
         flush_rewrite_rules();
+        
+        // Fire activation hook for cron and other handlers
+        do_action('x402_paywall_activated');
+        
+        // Run initial cleanup
+        if (class_exists('X402_Paywall_X402_Client')) {
+            $client = X402_Paywall_X402_Client::get_instance();
+            if ($client->is_available()) {
+                $client->run_cleanup();
+            }
+        }
     }
 }

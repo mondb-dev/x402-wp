@@ -108,9 +108,10 @@ class X402_Paywall_DB {
             'payment_status' => $payment_data['payment_status'] ?? 'pending',
             'facilitator_signature' => $payment_data['facilitator_signature'] ?? null,
             'facilitator_reference' => $payment_data['facilitator_reference'] ?? null,
+            'expires_at' => $payment_data['expires_at'] ?? null,
         );
 
-        $format = array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
+        $format = array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
 
         if (isset($payment_data['failure_status_code'])) {
             $failure_status_code = (int) $payment_data['failure_status_code'];
@@ -197,7 +198,7 @@ class X402_Paywall_DB {
      *
      * @param int $post_id Post ID
      * @param string $user_address User's wallet address
-     * @return bool Whether payment exists and is successful
+     * @return bool Whether payment exists and is successful (and not expired)
      */
     public static function has_user_paid($post_id, $user_address) {
         global $wpdb;
@@ -209,7 +210,8 @@ class X402_Paywall_DB {
             "SELECT COUNT(*) FROM $table_name
             WHERE post_id = %d
             AND (normalized_address = %s OR payer_identifier = %s OR user_address = %s)
-            AND payment_status = 'verified'",
+            AND payment_status = 'verified'
+            AND (expires_at IS NULL OR expires_at > NOW())",
             $post_id,
             $normalized_address,
             $normalized_address,
@@ -219,6 +221,43 @@ class X402_Paywall_DB {
         return $result > 0;
     }
 
+    /**
+     * Calculate access expiry date based on post's access duration setting
+     *
+     * @param int $post_id Post ID
+     * @return string|null MySQL datetime string or null for permanent access
+     */
+    public static function calculate_access_expiry($post_id) {
+        $access_duration = get_post_meta($post_id, '_x402_paywall_access_duration', true);
+        
+        if (empty($access_duration)) {
+            $access_duration = '1_year'; // Default to 1 year (current behavior)
+        }
+        
+        // Permanent access = no expiry
+        if ($access_duration === 'permanent') {
+            return null;
+        }
+        
+        // Map duration strings to PHP relative time formats
+        $intervals = array(
+            '1_day'     => '+1 day',
+            '1_week'    => '+1 week',
+            '1_month'   => '+1 month',
+            '3_months'  => '+3 months',
+            '6_months'  => '+6 months',
+            '1_year'    => '+1 year',
+        );
+        
+        $interval = $intervals[$access_duration] ?? '+1 year';
+        
+        // Calculate expiry timestamp
+        $expires_timestamp = strtotime($interval);
+        
+        // Convert to MySQL datetime format
+        return date('Y-m-d H:i:s', $expires_timestamp);
+    }
+    
     /**
      * Normalize wallet address for consistent lookups
      *

@@ -135,8 +135,193 @@ class X402_Paywall_Public {
             return $content;
         }
         
-        // No payment, show paywall message
-        return $this->render_paywall_message($post->ID, $paywall_config);
+        // No payment, show preview + paywall message
+        return $this->render_content_with_paywall($post->ID, $content, $paywall_config);
+    }
+    
+    /**
+     * Render content preview with paywall
+     *
+     * @param int $post_id Post ID
+     * @param string $content Full content
+     * @param array $paywall_config Paywall configuration
+     * @return string Preview + paywall HTML
+     */
+    private function render_content_with_paywall($post_id, $content, $paywall_config) {
+        $preview_length = get_post_meta($post_id, '_x402_paywall_preview_length', true) ?: '0';
+        
+        $preview_html = '';
+        
+        // Generate preview based on configuration
+        if ($preview_length === '-1') {
+            // Use WordPress <!--more--> tag
+            $preview_html = $this->extract_content_before_more_tag($content);
+        } elseif ($preview_length !== '0' && intval($preview_length) > 0) {
+            // Extract preview by word count while preserving HTML
+            $preview_html = $this->extract_preview_by_words($content, intval($preview_length));
+        }
+        
+        // If we have preview content, wrap it
+        if (!empty($preview_html)) {
+            $preview_html = '<div class="x402-paywall-preview">' . $preview_html . '</div>';
+        }
+        
+        // Render paywall message
+        $paywall_html = $this->render_paywall_message($post_id, $paywall_config);
+        
+        return $preview_html . $paywall_html;
+    }
+    
+    /**
+     * Extract content before <!--more--> tag
+     *
+     * @param string $content Full content
+     * @return string Content before more tag
+     */
+    private function extract_content_before_more_tag($content) {
+        // Check for <!--more--> tag
+        if (strpos($content, '<!--more-->') !== false) {
+            $parts = explode('<!--more-->', $content, 2);
+            return apply_filters('the_content', $parts[0]);
+        }
+        
+        // No more tag, return empty
+        return '';
+    }
+    
+    /**
+     * Extract preview by word count while preserving HTML, embeds, and media
+     *
+     * @param string $content Full content
+     * @param int $word_count Target word count
+     * @return string Preview HTML
+     */
+    private function extract_preview_by_words($content, $word_count) {
+        // Apply content filters to process shortcodes, embeds, etc.
+        $processed_content = apply_filters('the_content', $content);
+        
+        // Use WordPress built-in excerpt generation
+        $preview = wp_trim_words($processed_content, $word_count, '...');
+        
+        // However, wp_trim_words strips all HTML. We want to preserve it.
+        // Let's use a more sophisticated approach
+        $preview = $this->smart_trim_html($processed_content, $word_count);
+        
+        return $preview;
+    }
+    
+    /**
+     * Smart HTML trimming that preserves structure, embeds, and media
+     *
+     * @param string $html HTML content
+     * @param int $word_limit Word limit
+     * @return string Trimmed HTML
+     */
+    private function smart_trim_html($html, $word_limit) {
+        // Create a DOM document to parse HTML properly
+        $dom = new DOMDocument('1.0', 'UTF-8');
+        
+        // Suppress warnings for malformed HTML
+        libxml_use_internal_errors(true);
+        
+        // Load HTML with UTF-8 encoding
+        $dom->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        
+        libxml_clear_errors();
+        
+        $word_count = 0;
+        $result = '';
+        
+        // Walk through nodes and count words
+        $body = $dom->getElementsByTagName('body')->item(0);
+        if (!$body) {
+            // Fallback to simple word trimming
+            return wp_trim_words($html, $word_limit, '...');
+        }
+        
+        $this->count_words_recursive($body, $word_count, $word_limit, $result);
+        
+        // Clean up the result
+        $result = trim($result);
+        
+        // Add ellipsis if content was trimmed
+        if ($word_count >= $word_limit) {
+            $result .= '<p class="x402-preview-more">...</p>';
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Recursively count words and build HTML
+     *
+     * @param DOMNode $node Current node
+     * @param int &$word_count Current word count (by reference)
+     * @param int $word_limit Word limit
+     * @param string &$result Result HTML (by reference)
+     * @return bool Whether to continue processing
+     */
+    private function count_words_recursive($node, &$word_count, $word_limit, &$result) {
+        if ($word_count >= $word_limit) {
+            return false;
+        }
+        
+        foreach ($node->childNodes as $child) {
+            if ($word_count >= $word_limit) {
+                return false;
+            }
+            
+            if ($child->nodeType === XML_TEXT_NODE) {
+                // Count words in text node
+                $text = $child->nodeValue;
+                $words = preg_split('/\s+/', trim($text), -1, PREG_SPLIT_NO_EMPTY);
+                $remaining_words = $word_limit - $word_count;
+                
+                if (count($words) > $remaining_words) {
+                    // Trim to word limit
+                    $words = array_slice($words, 0, $remaining_words);
+                    $text = implode(' ', $words);
+                }
+                
+                $word_count += count($words);
+                $result .= htmlspecialchars($text, ENT_NOQUOTES, 'UTF-8');
+                
+            } elseif ($child->nodeType === XML_ELEMENT_NODE) {
+                $tag = $child->nodeName;
+                
+                // Preserve certain elements completely (embeds, iframes, images, videos)
+                if (in_array($tag, array('iframe', 'img', 'video', 'audio', 'figure', 'embed', 'object'))) {
+                    $result .= $child->ownerDocument->saveHTML($child);
+                    // Don't count words in media elements
+                    continue;
+                }
+                
+                // Open tag
+                $result .= '<' . $tag;
+                
+                // Add attributes
+                if ($child->hasAttributes()) {
+                    foreach ($child->attributes as $attr) {
+                        $result .= ' ' . $attr->nodeName . '="' . htmlspecialchars($attr->nodeValue, ENT_QUOTES, 'UTF-8') . '"';
+                    }
+                }
+                
+                $result .= '>';
+                
+                // Process children
+                if ($child->hasChildNodes()) {
+                    if (!$this->count_words_recursive($child, $word_count, $word_limit, $result)) {
+                        $result .= '</' . $tag . '>';
+                        return false;
+                    }
+                }
+                
+                // Close tag
+                $result .= '</' . $tag . '>';
+            }
+        }
+        
+        return true;
     }
     
     /**

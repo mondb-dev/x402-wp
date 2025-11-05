@@ -5,12 +5,15 @@ A WordPress plugin that implements the [x402 payment protocol](https://github.co
 ## Features
 
 - 🔒 **Easy Paywall Setup**: Add paywalls to any post or page with a few clicks
-- 💰 **Multi-Chain Support**: Accept payments on EVM (Ethereum, Base, Optimism, Arbitrum, Polygon) and Solana networks
+- �️ **Content Preview System**: Show teasers with embedded videos/images before the paywall (100/250/500 words or custom <!--more--> tag)
+- ⏱️ **Configurable Access Duration**: Set how long users can access content after payment (1 day to permanent)
+- �💰 **Multi-Chain Support**: Accept payments on EVM (Ethereum, Base, Optimism, Arbitrum, Polygon) and Solana networks
 - 🪙 **Auto-Token Detection**: Simply paste any ERC-20 or SPL token contract address - the plugin automatically fetches token name, symbol, and decimals from the blockchain
 - 👤 **User Payment Profiles**: Authors and editors can configure their payment addresses
 - ⚙️ **Flexible Configuration**: Customize payment amounts and choose from supported tokens
 - 🔐 **Secure**: Implements WordPress security best practices with nonces, sanitization, and validation
-- 📊 **Payment Logging**: Track all payment attempts in the database
+- 🛡️ **Replay Attack Prevention**: Database-backed nonce tracking prevents payment replay attacks
+- 📊 **Payment Logging**: Track all payment attempts with expiry dates in the database
 - 🎨 **User-Friendly Interface**: Clean, intuitive admin interface and public paywall display
 
 ## Requirements
@@ -175,6 +178,17 @@ You can extend the plugin by:
 - Adding more networks/tokens in `class-x402-paywall-meta-boxes.php`
 - Customizing the paywall display in `class-x402-paywall-public.php`
 - Adding custom payment validations in `class-x402-paywall-payment-handler.php`
+
+## Documentation
+
+Comprehensive guides are available:
+
+- **[Content Preview Guide](CONTENT_PREVIEW_GUIDE.md)** - Configure content teasers with embedded videos
+- **[Access Duration Guide](ACCESS_DURATION_GUIDE.md)** - Set time-based access control
+- **[Token Detection Guide](TOKEN_DETECTION_GUIDE.md)** - Auto-detect ERC-20/SPL tokens
+- **[Theme Developer Guide](THEME_DEVELOPER_GUIDE.md)** - Customize paywall templates
+- **[Hooks Reference](HOOKS_REFERENCE.md)** - Available filters and actions
+- **[X402 Integration](X402_INTEGRATION.md)** - X402 protocol implementation details
 
 ## Contributing
 

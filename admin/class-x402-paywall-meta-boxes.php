@@ -83,6 +83,7 @@ class X402_Paywall_Meta_Boxes {
         
         // Get current values
         $enabled = get_post_meta($post->ID, '_x402_paywall_enabled', true);
+        $preview_length = get_post_meta($post->ID, '_x402_paywall_preview_length', true) ?: '0';
         $network_type = get_post_meta($post->ID, '_x402_paywall_network_type', true) ?: 'evm';
         $network = get_post_meta($post->ID, '_x402_paywall_network', true) ?: 'base-mainnet';
         $token_address = get_post_meta($post->ID, '_x402_paywall_token_address', true);
@@ -141,6 +142,32 @@ class X402_Paywall_Meta_Boxes {
             </p>
             
             <div id="x402_paywall_settings" style="<?php echo $enabled !== '1' ? 'display:none;' : ''; ?>">
+                
+                <p>
+                    <label for="x402_paywall_preview_length">
+                        <strong><?php esc_html_e('Content Preview', 'x402-paywall'); ?></strong>
+                    </label>
+                    <select name="x402_paywall_preview_length" id="x402_paywall_preview_length" style="width: 100%;">
+                        <option value="0" <?php selected($preview_length, '0'); ?>>
+                            <?php esc_html_e('No Preview - Show paywall immediately', 'x402-paywall'); ?>
+                        </option>
+                        <option value="100" <?php selected($preview_length, '100'); ?>>
+                            <?php esc_html_e('Short Preview (~100 words)', 'x402-paywall'); ?>
+                        </option>
+                        <option value="250" <?php selected($preview_length, '250'); ?>>
+                            <?php esc_html_e('Medium Preview (~250 words)', 'x402-paywall'); ?>
+                        </option>
+                        <option value="500" <?php selected($preview_length, '500'); ?>>
+                            <?php esc_html_e('Long Preview (~500 words)', 'x402-paywall'); ?>
+                        </option>
+                        <option value="-1" <?php selected($preview_length, '-1'); ?>>
+                            <?php esc_html_e('Custom - Use <!--more--> tag in content', 'x402-paywall'); ?>
+                        </option>
+                    </select>
+                    <span class="description">
+                        <?php esc_html_e('Allow users to see a teaser before the paywall. Videos, images, and embeds in the preview are preserved.', 'x402-paywall'); ?>
+                    </span>
+                </p>
                 <p>
                     <label for="x402_paywall_network_type">
                         <strong><?php esc_html_e('Network Type', 'x402-paywall'); ?></strong>
@@ -240,6 +267,44 @@ class X402_Paywall_Meta_Boxes {
                         style="width: 100%;"
                     />
                     <span class="description"><?php esc_html_e('Payment amount in selected token', 'x402-paywall'); ?></span>
+                </p>
+                
+                <p>
+                    <label for="x402_paywall_access_duration">
+                        <strong><?php esc_html_e('Access Duration', 'x402-paywall'); ?></strong>
+                    </label>
+                    <?php
+                    $access_duration = get_post_meta($post->ID, '_x402_paywall_access_duration', true);
+                    if (empty($access_duration)) {
+                        $access_duration = '1_year'; // Default to 1 year (current behavior)
+                    }
+                    ?>
+                    <select name="x402_paywall_access_duration" id="x402_paywall_access_duration" style="width: 100%;">
+                        <option value="1_year" <?php selected($access_duration, '1_year'); ?>>
+                            <?php esc_html_e('1 Year (Default)', 'x402-paywall'); ?>
+                        </option>
+                        <option value="permanent" <?php selected($access_duration, 'permanent'); ?>>
+                            <?php esc_html_e('Permanent (Lifetime)', 'x402-paywall'); ?>
+                        </option>
+                        <option value="1_day" <?php selected($access_duration, '1_day'); ?>>
+                            <?php esc_html_e('1 Day', 'x402-paywall'); ?>
+                        </option>
+                        <option value="1_week" <?php selected($access_duration, '1_week'); ?>>
+                            <?php esc_html_e('1 Week', 'x402-paywall'); ?>
+                        </option>
+                        <option value="1_month" <?php selected($access_duration, '1_month'); ?>>
+                            <?php esc_html_e('1 Month', 'x402-paywall'); ?>
+                        </option>
+                        <option value="3_months" <?php selected($access_duration, '3_months'); ?>>
+                            <?php esc_html_e('3 Months', 'x402-paywall'); ?>
+                        </option>
+                        <option value="6_months" <?php selected($access_duration, '6_months'); ?>>
+                            <?php esc_html_e('6 Months', 'x402-paywall'); ?>
+                        </option>
+                    </select>
+                    <span class="description">
+                        <?php esc_html_e('How long users can access this content after payment. Current default: 1 Year', 'x402-paywall'); ?>
+                    </span>
                 </p>
             </div>
         </div>
@@ -566,11 +631,35 @@ class X402_Paywall_Meta_Boxes {
                 return;
             }
 
+            // Save preview length
+            $preview_length = isset($_POST['x402_paywall_preview_length'])
+                ? sanitize_text_field(wp_unslash($_POST['x402_paywall_preview_length']))
+                : '0';
+            
+            // Validate preview length
+            $valid_preview_lengths = array('0', '100', '250', '500', '-1');
+            if (!in_array($preview_length, $valid_preview_lengths, true)) {
+                $preview_length = '0'; // Fallback to no preview
+            }
+            
+            // Save access duration
+            $access_duration = isset($_POST['x402_paywall_access_duration'])
+                ? sanitize_text_field(wp_unslash($_POST['x402_paywall_access_duration']))
+                : '1_year';
+            
+            // Validate access duration
+            $valid_durations = array('1_day', '1_week', '1_month', '3_months', '6_months', '1_year', 'permanent');
+            if (!in_array($access_duration, $valid_durations, true)) {
+                $access_duration = '1_year'; // Fallback to default
+            }
+            
+            update_post_meta($post_id, '_x402_paywall_preview_length', $preview_length);
             update_post_meta($post_id, '_x402_paywall_network_type', $network_type);
             update_post_meta($post_id, '_x402_paywall_network', $network);
             update_post_meta($post_id, '_x402_paywall_token_address', $token_address);
             update_post_meta($post_id, '_x402_paywall_amount', $amount_atomic);
             update_post_meta($post_id, '_x402_paywall_amount_format', 'atomic');
+            update_post_meta($post_id, '_x402_paywall_access_duration', $access_duration);
 
             // Store token metadata for later use
             if ($token_meta) {
