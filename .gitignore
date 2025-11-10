@@ -1,5 +1,6 @@
 # Composer
-/vendor/
+# Note: vendor/ is committed for WordPress plugin distribution
+# This makes the plugin "installation ready" without requiring Composer
 composer.lock
 
 # IDE

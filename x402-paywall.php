@@ -3,7 +3,7 @@
  * Plugin Name: X402 Paywall
  * Plugin URI: https://github.com/mondb-dev/x402-wp
  * Description: Implement x402 payment protocol paywalls on WordPress pages and posts. Support for EVM and Solana blockchain payments.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires at least: 6.0
  * Requires PHP: 8.1
  * Author: mondb-dev
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('X402_PAYWALL_VERSION', '1.0.0');
+define('X402_PAYWALL_VERSION', '1.1.0');
 define('X402_PAYWALL_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('X402_PAYWALL_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('X402_PAYWALL_PLUGIN_FILE', __FILE__);
