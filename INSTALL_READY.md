@@ -4,6 +4,18 @@
 
 This package includes **all dependencies pre-installed**. Just upload and activate!
 
+### ⚠️ IMPORTANT: Dependencies Included
+
+The `x402-paywall-1.1.0.zip` package includes all required dependencies in the `vendor/` directory.
+
+**If you're cloning from GitHub:**
+1. Download `vendor-1.1.0.zip` from the releases page
+2. Extract it in the plugin root directory
+3. OR run `composer install --no-dev`
+
+**If you're downloading the release ZIP:**
+Everything is already included! Just install normally.
+
 ### Method 1: WordPress Admin Upload (Recommended)
 
 1. Download `x402-paywall-1.1.0.zip` from this release
@@ -28,14 +40,20 @@ wp plugin install x402-paywall-1.1.0.zip --activate
 
 ## Verification
 
-**SHA256 Checksum:**
+**Plugin Package SHA256:**
 ```
 3e35d6384fcc29d10b036aed5783976784cca7bc41fa8ca526d0b4d99044a43f
 ```
 
-Verify the download:
+**Vendor Package SHA256:**
+```
+6203309194f1444e229f5b189d6b22c711ef7194f28d5a6c01487dc1616bb97f
+```
+
+Verify downloads:
 ```bash
 sha256sum x402-paywall-1.1.0.zip
+sha256sum vendor-1.1.0.zip
 ```
 
 ## Requirements
