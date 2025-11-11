@@ -27,9 +27,10 @@ class X402_Paywall_Settings {
      * Add settings page
      */
     public function add_settings_page() {
-        add_options_page(
+        add_submenu_page(
+            'x402-paywall',
             __('X402 Paywall Settings', 'x402-paywall'),
-            __('X402 Paywall', 'x402-paywall'),
+            __('Settings', 'x402-paywall'),
             'manage_options',
             'x402-paywall-settings',
             array($this, 'render_settings_page')
