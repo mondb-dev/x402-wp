@@ -52,6 +52,9 @@ class X402_Paywall {
         
         // New core handler classes
         require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-security.php';
+        require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-replay-prevention.php';
+        require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-rate-limiter.php';
+        require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-cron.php';
         require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-hooks.php';
         require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-template-loader.php';
         require_once X402_PAYWALL_PLUGIN_DIR . 'includes/class-x402-paywall-protocol.php';
